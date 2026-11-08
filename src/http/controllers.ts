@@ -18,6 +18,7 @@ import { WagerQueryService } from '../wagering/application/wager-query.service';
 import { WalletService } from '../wallets/application/wallet.service';
 import { Database } from '../persistence/database.service';
 import { SqsService } from '../messaging/sqs.service';
+import { metrics } from '../observability/metrics';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -109,6 +110,16 @@ export class WageringController {
       providerId,
       externalTransactionId,
     );
+  }
+}
+
+@Controller()
+export class MetricsController {
+  /** Métricas no formato texto do Prometheus. */
+  @Get('metrics')
+  async metrics(@Res({ passthrough: true }) res: { type(t: string): unknown }) {
+    res.type('text/plain; version=0.0.4');
+    return metrics.render();
   }
 }
 

@@ -43,12 +43,12 @@ serão **discutidas na apresentação**.
 ## 2. Domínio (seção 3)
 
 Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-least-once**. Assumir que:
-- [ ] a mesma operação pode chegar várias vezes
+- [x] a mesma operação pode chegar várias vezes
 - [ ] uma operação dependente pode chegar **antes** da referenciada
-- [ ] várias instâncias podem tocar a mesma wallet ao mesmo tempo
-- [ ] o processo pode morrer **antes ou depois** do commit
-- [ ] eventos podem ser publicados mais de uma vez
-- [ ] PostgreSQL e SQS podem ficar temporariamente indisponíveis
+- [x] várias instâncias podem tocar a mesma wallet ao mesmo tempo
+- [x] o processo pode morrer **antes ou depois** do commit
+- [x] eventos podem ser publicados mais de uma vez
+- [x] PostgreSQL e SQS podem ficar temporariamente indisponíveis
 
 **Invariantes globais [E]:** nunca duplicar crédito · nunca duplicar débito · nunca perder evento confirmado · nunca saldo negativo.
 
@@ -76,11 +76,11 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 - [x] [E] 1. Nada de `number`, `float` ou `double` para dinheiro.
 - [x] [E] 2. Nada de cache em memória como garantia de idempotência.
 - [x] 3. Não confiar só no SQS FIFO para consistência.
-- [ ] [E] 4. Não publicar evento antes do commit da transação financeira.
+- [x] [E] 4. Não publicar evento antes do commit da transação financeira.
 - [x] 5. Não sobrescrever nem excluir lançamentos do ledger.
 - [x] 6. Não usar lock global compartilhado por todas as wallets.
 - [x] 7. Não fazer saldo como `read → calculate → update` sem controle de concorrência.
-- [ ] [E] 8. Correto com **múltiplas instâncias**.
+- [x] [E] 8. Correto com **múltiplas instâncias**.
 - [x] 9. Unicidade, imutabilidade e não-negatividade garantidas **no schema do banco** (constraints, índices). O desenho do schema é avaliado.
 
 ---
@@ -150,9 +150,9 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 - [ ] [OPC] partidas dobradas (double-entry)
 
 ### 5.5 Inbox e Outbox [P2]
-- [ ] `InboxMessage`: `messageId`, `consumerName`, `payloadHash`, `receivedAt`, `_processedAt?` · `receive`, `rehydrate`, `isProcessed`, `markProcessed(at)`
-- [ ] `OutboxMessage`: `id`, `aggregateId`, `eventType`, `payload` (readonly record), `occurredAt`, `_attempts`, `_nextAttemptAt?`, `_publishedAt?` · `enqueue(event)`, `rehydrate`, getters, `isPending`, `isDue(now)`, `markPublished(at)`, `scheduleRetry(now)` (incrementa attempts + backoff)
-- [ ] [E] Inbox + alteração financeira + ledger + outbox na **mesma transação SQL**
+- [x] `InboxMessage`: `messageId`, `consumerName`, `payloadHash`, `receivedAt`, `_processedAt?` · `receive`, `rehydrate`, `isProcessed`, `markProcessed(at)`
+- [x] `OutboxMessage`: `id`, `aggregateId`, `eventType`, `payload` (readonly record), `occurredAt`, `_attempts`, `_nextAttemptAt?`, `_publishedAt?` · `enqueue(event)`, `rehydrate`, getters, `isPending`, `isDue(now)`, `markPublished(at)`, `scheduleRetry(now)` (incrementa attempts + backoff)
+- [x] [E] Inbox + alteração financeira + ledger + outbox na **mesma transação SQL**
 
 ---
 
@@ -243,7 +243,7 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 ### Reconciliação
 - [x] `POST /wallets/:walletId/reconciliation`
 - [x] Resposta: `walletId`, `storedBalance`, `calculatedBalance`, `difference`, `consistent`, `checkedEntries`
-- [ ] Divergência **não é corrigida silenciosamente**: logada, contada em métrica e sinalizada na resposta
+- [x] Divergência **não é corrigida silenciosamente**: logada, contada em métrica e sinalizada na resposta
 
 ### Health [P1]
 - [x] `GET /health/live` — processo vivo
@@ -254,44 +254,44 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 
 ## 9. SQS (seção 10) [P2]
 
-- [ ] Filas: `wager-transactions.fifo` e `wager-transactions-dlq.fifo`
-- [ ] Mensagem: `{ messageId, type: "WagerTransactionRequested", occurredAt, data: {...mesmos campos + idempotencyKey} }`
+- [x] Filas: `wager-transactions.fifo` e `wager-transactions-dlq.fifo`
+- [x] Mensagem: `{ messageId, type: "WagerTransactionRequested", occurredAt, data: {...mesmos campos + idempotencyKey} }`
 - Consumidor:
-  - [ ] reutiliza **o mesmo use case** do HTTP
-  - [ ] deduplica via **inbox persistente** por `(consumerName, messageId)`
-  - [ ] **ack (DeleteMessage) só depois do commit**
-  - [ ] distingue erros: **negócio** (terminal → ack) · **transitório** (retry com backoff) · **permanente** (DLQ)
-  - [ ] limite de tentativas antes da DLQ
-  - [ ] em `SIGTERM`: conclui as mensagens em andamento ou devolve a visibilidade
-  - [ ] redelivery sem duplicar efeito
+  - [x] reutiliza **o mesmo use case** do HTTP
+  - [x] deduplica via **inbox persistente** por `(consumerName, messageId)`
+  - [x] **ack (DeleteMessage) só depois do commit**
+  - [x] distingue erros: **negócio** (terminal → ack) · **transitório** (retry com backoff) · **permanente** (DLQ)
+  - [x] limite de tentativas antes da DLQ
+  - [x] em `SIGTERM`: conclui as mensagens em andamento ou devolve a visibilidade
+  - [x] redelivery sem duplicar efeito
 
 ---
 
 ## 10. Transactional Outbox (seção 11) [P2][E]
 
-- [ ] Transação + saldo + ledger + inbox (se veio da fila) + evento = **atômicos**
-- [ ] Worker publica pendentes; funciona com **vários publishers concorrentes** sem perder nem duplicar indefinidamente (dica: `FOR UPDATE SKIP LOCKED`)
-- [ ] Cenário: commit → processo morre antes de publicar → outra instância assume → publica → publicação duplicada continua segura para o consumidor
+- [x] Transação + saldo + ledger + inbox (se veio da fila) + evento = **atômicos**
+- [x] Worker publica pendentes; funciona com **vários publishers concorrentes** sem perder nem duplicar indefinidamente (dica: `FOR UPDATE SKIP LOCKED`)
+- [x] Cenário: commit → processo morre antes de publicar → outra instância assume → publica → publicação duplicada continua segura para o consumidor
 - Eventos mínimos:
-  - [ ] `WagerTransactionProcessed` — qualquer aplicada, **inclusive LOSS**
-  - [ ] `WagerTransactionRejected` — rejeitada por regra de negócio
-  - [ ] `WalletBalanceChanged` — **somente** quando o saldo muda
+  - [x] `WagerTransactionProcessed` — qualquer aplicada, **inclusive LOSS**
+  - [x] `WagerTransactionRejected` — rejeitada por regra de negócio
+  - [x] `WalletBalanceChanged` — **somente** quando o saldo muda
   - [ ] `WagerTransactionPendingReference` — referência ausente
 - Envelope:
-  - [ ] `abstract class IntegrationEvent<T>` com `abstract eventType`, `abstract version`, `eventId`, `aggregateId`, `correlationId`, `causationId?`, `occurredAt`, `data: Readonly<T>`, construtor `protected`
-  - [ ] `toJSON()` → `{ eventId, eventType, aggregateId, correlationId, causationId?, occurredAt (ISO-8601), version, data }`
-  - [ ] **Uma subclasse concreta por evento**, com `eventType` e `version` no tipo (não string solta)
-  - [ ] Ex.: `WalletBalanceChanged` com `walletId`, `transactionId`, `direction`, `money`, `balanceBefore`, `balanceAfter`, `walletVersion` + `static from(wallet, entry, ctx)`
-  - [ ] `data` carrega `MoneyProps` (string), **nunca** a instância de `Money`
+  - [x] `abstract class IntegrationEvent<T>` com `abstract eventType`, `abstract version`, `eventId`, `aggregateId`, `correlationId`, `causationId?`, `occurredAt`, `data: Readonly<T>`, construtor `protected`
+  - [x] `toJSON()` → `{ eventId, eventType, aggregateId, correlationId, causationId?, occurredAt (ISO-8601), version, data }`
+  - [x] **Uma subclasse concreta por evento**, com `eventType` e `version` no tipo (não string solta)
+  - [x] Ex.: `WalletBalanceChanged` com `walletId`, `transactionId`, `direction`, `money`, `balanceBefore`, `balanceAfter`, `walletVersion` + `static from(wallet, entry, ctx)`
+  - [x] `data` carrega `MoneyProps` (string), **nunca** a instância de `Money`
 
 ---
 
 ## 11. Observabilidade (seção 12) [P2]
 
-- [ ] Logs **JSON** com `correlationId`, `messageId`, `transactionId`, `walletId`, `providerId`
-- [ ] Sem dados sensíveis nem payload financeiro completo nos logs
-- [ ] Métricas: transações por status · duplicatas detectadas · retries · mensagens em DLQ · conflitos de lock · outbox lag · latência de processamento
-- [ ] Health separado: liveness e readiness
+- [x] Logs **JSON** com `correlationId`, `messageId`, `transactionId`, `walletId`, `providerId`
+- [x] Sem dados sensíveis nem payload financeiro completo nos logs
+- [x] Métricas: transações por status · duplicatas detectadas · retries · mensagens em DLQ · conflitos de lock · outbox lag · latência de processamento
+- [x] Health separado: liveness e readiness
 - [ ] [OPC] OpenTelemetry e dashboard
 
 ---
@@ -307,23 +307,23 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 
 ### Integração — Postgres e LocalStack **reais em containers** [E]
 - [x] migrations e constraints
-- [ ] atomicidade entre wallet, ledger, inbox e outbox
-- [ ] inbox e redelivery
-- [ ] publishers concorrentes na mesma outbox
-- [ ] retry e DLQ
-- [ ] recuperação após reinicialização
+- [x] atomicidade entre wallet, ledger, inbox e outbox
+- [x] inbox e redelivery
+- [x] publishers concorrentes na mesma outbox
+- [x] retry e DLQ
+- [x] recuperação após reinicialização
 
 ### Concorrência — paralelismo real, não mock sequencial
 - [x] 1. mesma aposta **50 vezes em paralelo** → um único débito
 - [x] 2. cenário 100/80
 - [x] 3. wallets distintas em paralelo
-- [ ] 4. **≥ 3 processos/instâncias** simultâneos
-- [ ] 5. worker morto **depois do commit e antes do ack**
-- [ ] 6. dois publishers na mesma outbox
+- [x] 4. **≥ 3 processos/instâncias** simultâneos
+- [x] 5. worker morto **depois do commit e antes do ack**
+- [x] 6. dois publishers na mesma outbox
 - [ ] 7. ROLLBACK ou REFUND entregue antes da referência
-- [ ] 8. reinício do serviço com consistência final comprovada
+- [x] 8. reinício do serviço com consistência final comprovada
 
-- [ ] **Invariante final em todos os testes:** `wallet.balance == saldo reconstruído pelo ledger`
+- [x] **Invariante final em todos os testes:** `wallet.balance == saldo reconstruído pelo ledger`
 
 ---
 

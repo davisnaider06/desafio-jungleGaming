@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { setDefaultTimeout } from 'bun:test';
 import { MikroORM } from '@mikro-orm/postgresql';
 import { Migrator } from '@mikro-orm/migrations';
 
@@ -10,6 +11,9 @@ import { Migrator } from '@mikro-orm/migrations';
  * - Filas: nomes com sufixo aleatório por execução, para uma execução não enxergar mensagens de outra.
  * - Workers em segundo plano ficam desligados; cada teste liga só o que precisa.
  */
+// Testes de integração falam com Postgres e SQS reais; o padrão do Bun (5s) é curto demais.
+setDefaultTimeout(120_000);
+
 const suffix = randomBytes(3).toString('hex');
 
 Object.assign(process.env, {
@@ -17,6 +21,7 @@ Object.assign(process.env, {
   SQS_TRANSACTIONS_QUEUE: `t-${suffix}-wager-transactions.fifo`,
   SQS_TRANSACTIONS_DLQ: `t-${suffix}-wager-transactions-dlq.fifo`,
   SQS_EVENTS_QUEUE: `t-${suffix}-wager-events.fifo`,
+  LOG_LEVEL: 'error',
   OUTBOX_WORKER: 'off',
   SQS_CONSUMER: 'off',
   PENDING_WORKER: 'off',

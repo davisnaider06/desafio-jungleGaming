@@ -9,17 +9,20 @@
 import { loadConfig } from '../src/config';
 import { createSqsClient, ensureQueues } from '../src/messaging/sqs.service';
 
-const config = loadConfig();
-const client = createSqsClient(config.aws);
-
-try {
-  const urls = await ensureQueues(
-    client,
-    config.queues,
-    config.consumer.maxReceiveCount,
-    config.consumer.visibilityTimeoutSeconds,
-  );
-  console.log(JSON.stringify({ msg: 'queues ready', ...urls }, null, 2));
-} finally {
-  client.destroy();
+async function main() {
+  const config = loadConfig();
+  const client = createSqsClient(config.aws);
+  try {
+    const urls = await ensureQueues(
+      client,
+      config.queues,
+      config.consumer.maxReceiveCount,
+      config.consumer.visibilityTimeoutSeconds,
+    );
+    console.log(JSON.stringify({ msg: 'queues ready', ...urls }, null, 2));
+  } finally {
+    client.destroy();
+  }
 }
+
+void main();

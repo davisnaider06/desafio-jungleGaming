@@ -7,6 +7,8 @@ import {
   test,
 } from 'bun:test';
 import { randomUUID } from 'node:crypto';
+import { setLogSink } from '../../src/observability/logger';
+import { M, metrics } from '../../src/observability/metrics';
 import {
   TestApp,
   brl,
@@ -196,6 +198,21 @@ describe('reconciliação', () => {
       difference: brl('10.00'),
       consistent: false,
     });
+    const lines: string[] = [];
+    const restore = setLogSink((line) => lines.push(line));
+    const before = metrics.get(M.reconciliationDivergence);
+    try {
+      await http(t.baseUrl, 'POST', `/wallets/${w.id}/reconciliation`);
+    } finally {
+      restore();
+    }
+    // logada (sem valores monetários) e contada em métrica
+    const logged = lines
+      .map((l) => JSON.parse(l))
+      .find((l) => l.msg === 'wallet reconciliation divergence');
+    expect(logged).toMatchObject({ level: 'error', walletId: w.id });
+    expect(JSON.stringify(logged)).not.toContain('60.00');
+    expect(metrics.get(M.reconciliationDivergence)).toBe(before + 1);
     const after = await sql(`select balance from wallets where id = ?`, [w.id]);
     expect(after[0].balance).toBe('60.00'); // continua errado: nada foi corrigido em silêncio
   });

@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { UniqueConstraintViolationException } from '@mikro-orm/core';
 import { Database } from '../../persistence/database.service';
+import { logger } from '../../observability/logger';
+import { M, metrics } from '../../observability/metrics';
+import { WalletBalanceChanged } from '../../messaging/domain/events';
+import { OutboxMessage } from '../../messaging/domain/outbox-message';
 import { LedgerRepository } from '../../persistence/ledger.repository';
+import { OutboxRepository } from '../../persistence/outbox.repository';
 import { WagerTransactionRepository } from '../../persistence/wager-transaction.repository';
 import { WalletRepository } from '../../persistence/wallet.repository';
 import { canonicalHash } from '../../shared/canonical-hash';
@@ -76,6 +81,7 @@ export class WalletService {
     @Inject(LedgerRepository) private readonly ledger: LedgerRepository,
     @Inject(WagerTransactionRepository)
     private readonly txs: WagerTransactionRepository,
+    @Inject(OutboxRepository) private readonly outbox: OutboxRepository,
   ) {}
 
   async create(body: unknown): Promise<WalletView> {
@@ -133,6 +139,14 @@ export class WalletService {
             }),
           );
           await this.ledger.insert(em, entry);
+          // Evento na mesma transação (outbox): o saldo inicial também é uma mudança de saldo.
+          await this.outbox.insertAll(em, [
+            OutboxMessage.enqueue(
+              WalletBalanceChanged.from(wallet, entry, {
+                correlationId: randomUUID(),
+              }),
+            ),
+          ]);
         }
       });
     } catch (error) {
@@ -191,25 +205,23 @@ export class WalletService {
    */
   async reconcile(walletId: string): Promise<ReconciliationView> {
     const rows = await this.db.read((em) =>
-      em
-        .getConnection()
-        .execute<
-          {
-            balance: string;
-            currency: string;
-            calculated: string;
-            entries: string;
-          }[]
-        >(
-          `select w.balance, w.currency,
+      em.execute<
+        {
+          balance: string;
+          currency: string;
+          calculated: string;
+          entries: string;
+        }[]
+      >(
+        `select w.balance, w.currency,
                 coalesce(sum(case when l.direction = 'CREDIT' then l.amount else -l.amount end), 0) as calculated,
                 count(l.id) as entries
            from wallets w
            left join wallet_ledger_entries l on l.wallet_id = w.id
           where w.id = ?
           group by w.id`,
-          [walletId],
-        ),
+        [walletId],
+      ),
     );
     const row = rows[0];
     if (!row) throw new NotFoundError(`wallet ${walletId} not found`);
@@ -218,6 +230,15 @@ export class WalletService {
     const stored = Money.fromStored({ amount: row.balance, currency });
     const calculated = Money.fromStored({ amount: row.calculated, currency });
     const difference = stored.subtract(calculated);
+    if (!difference.isZero()) {
+      // Divergência: NUNCA é corrigida aqui. Fica registrada (log + métrica) e sinalizada na resposta
+      // para um humano investigar. Corrigir em silêncio esconderia o bug que a causou.
+      metrics.inc(M.reconciliationDivergence);
+      logger.error('wallet reconciliation divergence', {
+        walletId,
+        checkedEntries: Number(row.entries),
+      });
+    }
     return {
       walletId,
       storedBalance: stored.toJSON(),

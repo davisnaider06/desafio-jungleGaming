@@ -1,9 +1,13 @@
 import { randomUUID } from 'node:crypto';
+import { setDefaultTimeout } from 'bun:test';
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { MikroORM } from '@mikro-orm/core';
 import type { EntityManager } from '@mikro-orm/postgresql';
 import { AppModule } from '../../src/app.module';
+
+// Os testes falam com Postgres e SQS reais; o padrão do Bun (5s) é curto demais.
+setDefaultTimeout(120_000);
 
 export interface TestApp {
   app: INestApplication;

@@ -12,12 +12,10 @@ let orm: MikroORM;
 
 const tables = async () =>
   (
-    await orm.em
-      .getConnection()
-      .execute<{ table_name: string }[]>(
-        `select table_name from information_schema.tables
+    await orm.em.getConnection().execute<{ table_name: string }[]>(
+      `select table_name from information_schema.tables
           where table_schema = 'public' and table_name not like 'mikro_orm%' order by 1`,
-      )
+    )
   ).map((r) => r.table_name);
 
 beforeAll(async () => {
@@ -66,7 +64,9 @@ describe('migrations reversíveis', () => {
     expect(await tables()).toEqual([]);
     const functions = await orm.em
       .getConnection()
-      .execute(`select proname from pg_proc where proname in ('forbid_ledger_mutation', 'guard_wager_transaction')`);
+      .execute(
+        `select proname from pg_proc where proname in ('forbid_ledger_mutation', 'guard_wager_transaction')`,
+      );
     expect(functions).toEqual([]);
 
     await orm.migrator.up();

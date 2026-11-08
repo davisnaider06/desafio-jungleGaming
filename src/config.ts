@@ -57,6 +57,8 @@ export function loadConfig() {
       waitTimeSeconds: int('SQS_WAIT_SECONDS', 1),
       maxMessages: int('SQS_MAX_MESSAGES', 10),
       visibilityTimeoutSeconds: int('SQS_VISIBILITY_TIMEOUT', 30),
+      /** Espera mínima (s) antes de reentregar uma mensagem que falhou; dobra a cada tentativa. */
+      retryBaseSeconds: int('SQS_RETRY_BASE_SECONDS', 1),
       /** Usado no RedrivePolicy: depois disso a mensagem vai para a DLQ. */
       maxReceiveCount: int('SQS_MAX_RECEIVE_COUNT', 5),
     },

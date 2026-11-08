@@ -82,7 +82,7 @@ export class WagerTransactionRepository {
     now: Date,
     limit: number,
   ): Promise<WagerTransaction[]> {
-    const rows = await em.getConnection().execute<{ id: string }[]>(
+    const rows = await em.execute<{ id: string }[]>(
       `select id from wager_transactions
           where status = 'PENDING_REFERENCE' and next_attempt_at <= ?
           order by next_attempt_at

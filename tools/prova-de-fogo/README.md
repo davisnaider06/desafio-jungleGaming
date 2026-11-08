@@ -4,8 +4,9 @@ Painel para tentar quebrar o serviço de propósito, além da suíte automatizad
 Cada ataque mostra: o risco, cada requisição enviada, o estado final do banco
 (saldo, versão, extrato, reconciliação) e qual defesa do código segurou o ataque.
 
-Foi com ele que encontrei dois problemas que os testes automatizados não pegavam
-(setup em sequência rápida e workers sem backoff), registrados no ARCHITECTURE.md.
+Foi com ele que encontrei três problemas que os testes automatizados não pegavam
+(setup em sequência rápida, workers sem backoff e banco caindo de verdade devolvendo
+500 em vez de 503), registrados no ARCHITECTURE.md.
 
 ## Como usar
 

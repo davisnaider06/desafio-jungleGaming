@@ -114,7 +114,7 @@ export async function waitForSqs(
         const code = (error as { code?: unknown } | null)?.code;
         const reason =
           error instanceof Error
-            ? error.message || String(code ?? error.name)
+            ? error.message || (typeof code === 'string' ? code : error.name)
             : String(error);
         throw new Error(
           `SQS não ficou disponível em ${Math.round(timeoutMs / 1000)}s ` +

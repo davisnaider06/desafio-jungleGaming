@@ -34,6 +34,12 @@
   .def { border-left:3px solid var(--blue); padding:4px 10px; margin:6px 0; background:#121821 }
   .def b { color:var(--blue) } .def code { color:var(--mut) }
   #summary { font-weight:600 }
+  button.running { border-color:var(--acc); color:var(--acc) } button.queued { color:var(--mut) }
+  .result.live { border-color:var(--acc) }
+  .badge.live { color:var(--acc); border-color:var(--acc); animation: pulse 1s ease-in-out infinite }
+  @keyframes pulse { 50% { opacity:.35 } }
+  .log { font-family: ui-monospace, Consolas, monospace; font-size:12px; background:#0b0d11; border:1px solid var(--line); border-radius:6px; padding:8px; max-height:260px; overflow:auto }
+  .ln { white-space:pre-wrap } .ln.stp { color:var(--acc); margin-top:4px } .ln.ok { color:var(--ok) } .ln.warn { color:#e3b341 } .ln.err { color:var(--bad) } .ln.cnt { color:var(--mut) }
 </style>
 </head>
 <body>
@@ -62,7 +68,16 @@ let totals = { pass: 0, fail: 0 };
 let trace = [];          // tudo que foi enviado/recebido no ataque atual
 let currentGroup = null; // rótulo da etapa atual (ex.: "rajada de 50")
 
-function step(label) { currentGroup = label; }
+// ---- log ao vivo: o que está acontecendo enquanto o ataque roda ----
+let live = null; // { el, logEl, groups: {}, counters: {} }
+function logLine(text, cls = '') {
+  if (!live) return null;
+  const d = document.createElement('div'); d.className = 'ln ' + cls; d.textContent = text;
+  live.logEl.appendChild(d); live.logEl.scrollTop = live.logEl.scrollHeight; return d;
+}
+const lineClass = (s) => typeof s !== 'number' ? '' : s < 300 ? 'ok' : s < 500 ? 'warn' : 'err';
+
+function step(label) { currentGroup = label; logLine('▶ ' + label, 'stp'); }
 
 async function api(method, path, body, headers = {}, opts = {}) {
   const started = performance.now();
@@ -73,16 +88,30 @@ async function api(method, path, body, headers = {}, opts = {}) {
   });
   const text = await res.text();
   let json; try { json = JSON.parse(text); } catch { json = text; }
+  const ms = Math.round(performance.now() - started);
   if (!opts.silent) {
-    trace.push({ group: currentGroup, method, path, key: headers['idempotency-key'], body, status: res.status,
-      ms: Math.round(performance.now() - started), response: json });
+    trace.push({ group: currentGroup, method, path, key: headers['idempotency-key'], body, status: res.status, ms, response: json });
+    if (live) {
+      const g = currentGroup ?? '-'; live.groups[g] = (live.groups[g] ?? 0) + 1;
+      const extra = json && typeof json === 'object' ? (json.failureCode ? ` ${json.failureCode}` : json.status ? ` ${json.status}` : '') : '';
+      if (live.groups[g] <= 5) logLine(`   ${method} ${path} → ${res.status}${extra} (${ms}ms)`, lineClass(res.status));
+      else {
+        live.counters[g] ??= logLine('', 'cnt');
+        live.counters[g].textContent = `   … +${live.groups[g] - 5} respostas nesta rajada`;
+      }
+    }
   }
   return { status: res.status, body: json };
 }
 async function ops(name, body) {
-  trace.push({ group: currentGroup, method: 'OPS', path: name, body, status: '…', ms: 0, response: '(comando de infraestrutura via docker compose)' });
+  const entry = { group: currentGroup, method: 'OPS', path: name, body, status: '…', ms: 0, response: '(comando de infraestrutura via docker compose)' };
+  trace.push(entry);
+  const line = logLine(`   docker compose → ${name} …`, 'cnt');
+  const started = performance.now();
   const r = await fetch('/ops/' + name, { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify(body ?? {}) });
-  const j = await r.json(); trace[trace.length - 1].status = j.code === 0 ? 'ok' : 'erro'; trace[trace.length - 1].response = j.out;
+  const j = await r.json();
+  entry.status = j.code === 0 ? 'ok' : 'erro'; entry.response = j.out; entry.ms = Math.round(performance.now() - started);
+  if (line) { line.textContent = `   docker compose → ${name}: ${entry.status} (${entry.ms}ms)`; line.className = 'ln ' + (j.code === 0 ? 'ok' : 'err'); }
   return j;
 }
 
@@ -107,6 +136,7 @@ function send(payload, key) {
 async function balance(w) { return (await api('GET', '/wallets/' + w.id, undefined, {}, { silent: true })).body.balance?.amount; }
 async function waitFor(fn, ms = 15000, stepMs = 500) {
   const end = Date.now() + ms;
+  logLine(`   aguardando (até ${Math.round(ms / 1000)}s)…`, 'cnt');
   while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(stepMs); }
   return null;
 }
@@ -162,7 +192,7 @@ function renderSnapshot(s) {
 function report(sc, checks, snap, error) {
   const ok = !error && checks.every(c => c.ok);
   totals[ok ? 'pass' : 'fail']++;
-  document.getElementById('summary').textContent = `✅ ${totals.pass}  ❌ ${totals.fail}`;
+  status();
   const rows = checks.map(c => `<tr><td class="s ${c.ok ? 'pass':'fail'}">${c.ok ? '✔':'✘'}</td><td>${esc(c.name)}</td><td><code>esperado ${esc(c.exp)}</code></td><td><code>veio ${esc(c.got)}</code></td></tr>`).join('');
   const defesas = (sc.defesa ?? []).map(d => `<div class="def"><b>${esc(d.camada)}</b> — ${d.como}<br><code>${esc(d.onde)}</code></div>`).join('');
   const html = `<div class="result"><h3><span class="badge ${ok ? 'ok':'bad'}">${ok ? 'PASSOU':'FALHOU'}</span>${esc(sc.t)}</h3>
@@ -173,9 +203,7 @@ function report(sc, checks, snap, error) {
     <div class="sec"><h4>Veredito</h4><table>${rows}</table></div>
     <div class="sec"><h4>${ok ? 'Por que aguentou (as defesas que seguraram)' : 'Onde investigar (as defesas que deveriam ter segurado)'}</h4>${defesas}</div>
     ${sc.note ? `<div class="sec"><h4>Para ver com os próprios olhos</h4><p>${sc.note}</p></div>` : ''}</div>`;
-  const out = document.getElementById('out');
-  if (!out.querySelector('.result')) out.innerHTML = '';
-  out.insertAdjacentHTML('afterbegin', html);
+  return html;
 }
 
 // ================= ataques =================
@@ -401,19 +429,58 @@ const INFRA = [
 
 // ================= UI =================
 function render(list, el) {
-  document.getElementById(el).innerHTML = list.map((s, i) => `<div class="scn"><div>${s.t}<small>${s.d}</small></div><button onclick="runOne('${el}', ${i})">atacar</button></div>`).join('');
+  document.getElementById(el).innerHTML = list.map((s, i) => `<div class="scn"><div>${s.t}<small>${s.d}</small></div><button id="btn-${el}-${i}" onclick="runOne('${el}', ${i})">atacar</button></div>`).join('');
 }
-async function runOne(el, i) {
+function setBtn(el, i, state) {
+  const b = document.getElementById(`btn-${el}-${i}`); if (!b) return;
+  b.classList.remove('running', 'queued');
+  if (state === 'queued') { b.textContent = 'na fila…'; b.classList.add('queued'); }
+  else if (state === 'running') { b.textContent = 'atacando…'; b.classList.add('running'); }
+  else b.textContent = 'atacar';
+}
+// Fila de execução: um ataque por vez, mesmo se clicar em vários (o raio-x é por ataque).
+let queue = Promise.resolve(); let pending = 0;
+function runOne(el, i) {
+  pending++; status(); setBtn(el, i, 'queued');
+  queue = queue.then(() => runOneInner(el, i)).finally(() => { pending--; status(); });
+  return queue;
+}
+function status() {
+  const s = document.getElementById('summary');
+  s.textContent = `✅ ${totals.pass}  ❌ ${totals.fail}` + (pending ? `  ⏳ ${pending} na fila` : '');
+}
+async function runOneInner(el, i) {
   const sc = (el === 'list-app' ? APP : INFRA)[i];
   trace = []; currentGroup = null;
+  setBtn(el, i, 'running');
+
+  // cartão "ao vivo" no topo dos resultados
+  const out = document.getElementById('out');
+  if (!out.querySelector('.result')) out.innerHTML = '';
+  out.insertAdjacentHTML('afterbegin', `<div class="result live"><h3><span class="badge live">ATACANDO</span>${esc(sc.t)} <small class="timer" style="color:var(--mut)">0s</small></h3>
+    <div class="sec"><h4>O risco</h4><p>${sc.risco}</p></div><div class="sec"><h4>Ao vivo</h4><div class="log"></div></div></div>`);
+  const el0 = out.firstElementChild;
+  live = { el: el0, logEl: el0.querySelector('.log'), groups: {}, counters: {} };
+  const t0 = Date.now(); const timer = el0.querySelector('.timer');
+  const tick = setInterval(() => { timer.textContent = Math.round((Date.now() - t0) / 1000) + 's'; }, 250);
+
   let res, snap = null, err = null;
   try {
     res = await sc.fn();
-    if (res.wallet) { snap = await snapshot(res.wallet); res.checks.push(check('invariante: saldo == soma do extrato', true, snap.recon.consistent)); }
-  } catch (e) { err = String(e.message ?? e); }
-  report(sc, res?.checks ?? [], snap, err);
+    if (res.wallet) {
+      step('lendo o estado final do banco (saldo, extrato, reconciliação)');
+      snap = await snapshot(res.wallet);
+      res.checks.push(check('invariante: saldo == soma do extrato', true, snap.recon.consistent));
+    }
+  } catch (e) { err = String(e.message ?? e); logLine('✘ erro: ' + err, 'err'); }
+
+  clearInterval(tick);
+  const html = report(sc, res?.checks ?? [], snap, err);
+  live = null;
+  el0.outerHTML = html;
+  setBtn(el, i, 'idle');
 }
-async function runAll() { for (let i = APP.length - 1; i >= 0; i--) await runOne('list-app', i); }
+function runAll() { for (let i = APP.length - 1; i >= 0; i--) runOne('list-app', i); return queue; }
 function clearOut() { totals = { pass: 0, fail: 0 }; document.getElementById('summary').textContent = ''; document.getElementById('out').innerHTML = '<div class="card"><code>Limpo.</code></div>'; }
 async function checkHealth() {
   const r = await api('GET', '/health/ready', undefined, {}, { silent: true }); const el = document.getElementById('health');

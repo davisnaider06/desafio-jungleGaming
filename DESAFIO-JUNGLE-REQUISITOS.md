@@ -1,0 +1,410 @@
+# Desafio Jungle Gaming — Distributed Wagering Processor
+
+Checklist completo dos requisitos do README oficial
+(https://github.com/junglegaming/backend-challenge), organizado para implementar e conferir.
+Em caso de dúvida, **o README oficial manda**. Este arquivo é o mapa de trabalho.
+
+**Prazo:** 3 dias a partir do e-mail de 06/11 às 18h26 → **segunda 09/11, 18h26**.
+Meta: entregar **segunda até 15h**. Entrega pelo link do e-mail; em caso de erro, por e-mail.
+
+Legenda de prioridade: **[E]** = evita falha eliminatória · **[P1]** · **[P2]** · **[P3]** · **[OPC]** opcional/diferencial
+
+---
+
+## 0. O que eles avaliam (seção 1)
+
+Não avaliam CRUD nem "saber NestJS por cima". Avaliam:
+- [ ] correção financeira
+- [ ] concorrência entre múltiplas instâncias
+- [ ] idempotência persistente
+- [ ] consistência entre saldo materializado e ledger
+- [ ] processamento assíncrono e recuperação após falhas
+- [ ] clareza das decisões técnicas
+
+O sistema tem que continuar correto quando mensagens chegam **duplicadas**, **fora de ordem**
+ou **ao mesmo tempo**. "Raciocínio claro, código limpo e decisões justificadas" — as decisões
+serão **discutidas na apresentação**.
+
+---
+
+## 1. Autenticação (seção 2) — vale 0 pontos
+
+- [ ] **Decisão:** não implementar (recomendado pelo prazo).
+- [ ] Se NÃO implementar:
+  - [ ] documentar a decisão no `ARCHITECTURE.md`
+  - [ ] descrever o desenho que adotaria (IdP externo, ex.: Keycloak ou Zitadel, OIDC)
+  - [ ] deixar ponto de extensão explícito no código (ex.: `AuthGuard` no-op ou `ProviderIdentityPort`)
+- [ ] Se implementar: **IdP externo** (Keycloak/Zitadel ou equivalente). **Proibido** tabela própria de usuários com hash de senha.
+- [ ] Endpoints de health ficam **abertos**.
+- [ ] Mensagens da fila = canal interno confiável, **mas** o `providerId` dentro da mensagem passa pelas mesmas validações de domínio.
+
+---
+
+## 2. Domínio (seção 3)
+
+Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-least-once**. Assumir que:
+- [ ] a mesma operação pode chegar várias vezes
+- [ ] uma operação dependente pode chegar **antes** da referenciada
+- [ ] várias instâncias podem tocar a mesma wallet ao mesmo tempo
+- [ ] o processo pode morrer **antes ou depois** do commit
+- [ ] eventos podem ser publicados mais de uma vez
+- [ ] PostgreSQL e SQS podem ficar temporariamente indisponíveis
+
+**Invariantes globais [E]:** nunca duplicar crédito · nunca duplicar débito · nunca perder evento confirmado · nunca saldo negativo.
+
+---
+
+## 3. Stack (seção 4)
+
+| Item | Obrigatório |
+|---|---|
+| Runtime / package manager / **test runner** | **Bun 1.x** (`bun test`) |
+| Linguagem | TypeScript **strict** |
+| Framework | NestJS |
+| Banco | PostgreSQL |
+| Mensageria | AWS SQS via **LocalStack** ou MiniStack |
+| Orquestração local | Docker Compose |
+| Migrations | **versionadas e reversíveis** (up e down) |
+
+- [ ] ORM: **MikroORM** (preferido: Unit of Work, Identity Map, `em.transactional()`, `LockMode`). TypeORM aceito. **Prisma proibido.**
+- [ ] Justificar no `ARCHITECTURE.md`: escolha do ORM, **mapeamento do `Money`** e **estratégia transacional**.
+
+---
+
+## 4. Restrições invioláveis (seção 5)
+
+- [ ] [E] 1. Nada de `number`, `float` ou `double` para dinheiro.
+- [ ] [E] 2. Nada de cache em memória como garantia de idempotência.
+- [ ] 3. Não confiar só no SQS FIFO para consistência.
+- [ ] [E] 4. Não publicar evento antes do commit da transação financeira.
+- [ ] 5. Não sobrescrever nem excluir lançamentos do ledger.
+- [ ] 6. Não usar lock global compartilhado por todas as wallets.
+- [ ] 7. Não fazer saldo como `read → calculate → update` sem controle de concorrência.
+- [ ] [E] 8. Correto com **múltiplas instâncias**.
+- [ ] 9. Unicidade, imutabilidade e não-negatividade garantidas **no schema do banco** (constraints, índices). O desenho do schema é avaliado.
+
+---
+
+## 5. Modelo de domínio (seção 6)
+
+### 5.0 Regra de modelagem (todas as classes de domínio)
+- [ ] Construtor `private` ou `protected` + factories estáticas (`create`, `from`, `rehydrate`).
+- [ ] `rehydrate` reconstrói do banco **sem revalidar** regras de transição.
+- [ ] Estado encapsulado, transições explícitas. Nomes podem mudar se as garantias forem preservadas.
+
+### 5.1 `Money` [P1][E]
+- [ ] `interface MoneyProps { amount: string; currency: string }` (DTO)
+- [ ] Construtor privado com `Decimal` + `currency`
+- [ ] `static from(props: MoneyProps)` · `static zero(currency)`
+- [ ] `add` · `subtract` · `negate`
+- [ ] `isZero` · `isPositive` · `isNegative` · `isLessThan` · `equals`
+- [ ] `toJSON(): MoneyProps` · `toString()`
+- [ ] `private assertSameCurrency(other)`
+- [ ] **Imutável**: toda operação retorna instância nova.
+- [ ] `amount` recebido e serializado como **string decimal com escala fixa de 2 casas**.
+- [ ] Moedas diferentes → **erro de domínio**.
+- [ ] Rejeitar entrada: `NaN`, `Infinity`, notação científica, string vazia, **mais de 2 casas**, **negativo em contrato de entrada**.
+- [ ] Domínio **não depende** de tipos do ORM nem de decorators do Nest.
+- [ ] Persistência: valor e moeda podem ser colunas separadas, desde que exato e reidratado como `Money`.
+- [ ] Pode assumir só `BRL`, **mas** o modelo continua multimoeda e **conflito de moeda é testado**.
+- [ ] Formato nos contratos: `{ "amount": "25.00", "currency": "BRL" }`
+
+### 5.2 `Wallet` (Aggregate Root) [P1]
+- [ ] Campos: `id`, `playerId`, `currency`, `_balance: Money`, `_version: number`, `createdAt`, `_updatedAt`
+- [ ] `static open({ id, playerId, initialBalance })` · `static rehydrate(state)`
+- [ ] getters `balance`, `version`, `updatedAt`
+- [ ] `debit(...)` e `credit(...)` mantendo saldo e ledger consistentes (assinatura/retorno à sua escolha)
+- [ ] `private assertSameCurrency`
+- Invariantes:
+  - [ ] no máximo **uma wallet por `playerId` + `currency`** (unique no banco)
+  - [ ] saldo nunca negativo (check no banco)
+  - [ ] **toda alteração de saldo tem lançamento no ledger e vice-versa**
+  - [ ] concorrência não causa lost update
+  - [ ] moeda da operação = moeda da wallet
+  - [ ] `version` começa em **1** após criar e **só incrementa quando o saldo muda**
+- [ ] `version` sugerido para optimistic lock; outra estratégia ok se justificada.
+
+### 5.3 `WagerTransaction` [P1]
+- [ ] `enum WagerTransactionKind`: `OPENING` (interno), `BET`, `WIN`, `LOSS`, `REFUND`, `ROLLBACK`
+- [ ] `enum WagerTransactionStatus`: `PENDING`, `PENDING_REFERENCE`, `PROCESSED`, `REJECTED`, `FAILED`
+- [ ] Campos: `id`, `providerId`, `externalTransactionId`, `idempotencyKey`, `payloadHash`, `walletId`, `playerId`, `roundId`, `gameId`, `kind`, `money`, `referenceExternalTransactionId` (id do provedor), `createdAt`, `_status`, `_referenceTransactionId?`, `_failureCode?`, `_processedAt?`
+- [ ] `static create(props)` — nasce `PENDING`, valida exigência de referência por kind
+- [ ] `static rehydrate(state)`
+- [ ] getters `status`, `referenceTransactionId`, `failureCode`, `processedAt`
+- [ ] Transições: `markProcessed(referenceTransactionId, at)` · `markPendingReference()` · `reject(code)` · `fail(code)`
+- [ ] Transição a partir de estado terminal → lança `InvalidTransactionStateError` (erro de programação)
+- [ ] Consultas: `isTerminal()` · `affectsBalance()` (false para LOSS) · `requiresReference()` (REFUND e ROLLBACK) · `matchesPayload(hash)` · `ledgerDirectionFor(reference?)`
+- [ ] `PROCESSED`, `REJECTED`, `FAILED` são **terminais**
+- [ ] **Definir e documentar** as transições válidas (diagrama de estados no ARCHITECTURE.md)
+- [ ] `OPENING` **não pode** ser submetido pela API nem pela fila
+- [ ] Mesma idempotency key + payload diferente = **conflito**, não replay
+
+### 5.4 `WalletLedgerEntry` (imutável) [P1][E]
+- [ ] `enum LedgerDirection { Debit = "DEBIT", Credit = "CREDIT" }`
+- [ ] Campos (todos readonly): `id`, `walletId`, `transactionId`, `direction`, `money`, `balanceBefore`, `balanceAfter`, `createdAt`
+- [ ] `static create(props)` valida a aritmética · `static rehydrate(state)`
+- [ ] `isBalanced()`: `balanceBefore ± money === balanceAfter`
+- [ ] **Sem campos mutáveis e sem métodos de transição**
+- [ ] No máximo **um lançamento por transação por wallet** (unique no banco)
+- [ ] `LOSS` e transação `REJECTED` **não geram** lançamento
+- [ ] [OPC] partidas dobradas (double-entry)
+
+### 5.5 Inbox e Outbox [P2]
+- [ ] `InboxMessage`: `messageId`, `consumerName`, `payloadHash`, `receivedAt`, `_processedAt?` · `receive`, `rehydrate`, `isProcessed`, `markProcessed(at)`
+- [ ] `OutboxMessage`: `id`, `aggregateId`, `eventType`, `payload` (readonly record), `occurredAt`, `_attempts`, `_nextAttemptAt?`, `_publishedAt?` · `enqueue(event)`, `rehydrate`, getters, `isPending`, `isDue(now)`, `markPublished(at)`, `scheduleRetry(now)` (incrementa attempts + backoff)
+- [ ] [E] Inbox + alteração financeira + ledger + outbox na **mesma transação SQL**
+
+---
+
+## 6. Regras de negócio (seção 7)
+
+| Operação | Saldo | Ledger | Regra |
+|---|---|---|---|
+| BET | débito | 1 DEBIT | rejeita se saldo insuficiente |
+| WIN | crédito | 1 CREDIT | pode referenciar a BET da mesma rodada |
+| LOSS | nenhum | nenhum | registra resultado sem mover saldo |
+| REFUND | crédito | 1 CREDIT | reverte uma BET `PROCESSED`, uma única vez |
+| ROLLBACK | inverso da referência | 1 invertida | reverte transação `PROCESSED`, uma única vez |
+
+- [ ] [P1] BET, WIN, LOSS
+- [ ] [P3] REFUND, ROLLBACK
+- [ ] 1. REFUND e ROLLBACK exigem `referenceExternalTransactionId`
+- [ ] 2. Referência resolvida por `(providerId, referenceExternalTransactionId)` e precisa ser do **mesmo provider, player, wallet, moeda e rodada**
+- [ ] 3. REFUND só referencia BET. ROLLBACK referencia BET, WIN ou REFUND
+- [ ] 4. Uma referência não pode ser revertida duas vezes pelo mesmo tipo de operação (constraint no banco)
+- [ ] 5. Valor de REFUND/ROLLBACK **igual** ao da referência (parcial fora de escopo)
+- [ ] 6. `REJECTED` não altera saldo nem gera ledger
+- [ ] 7. Repetir operação já processada retorna **o resultado original, incluindo o saldo daquele momento**
+- [ ] 8. Referência ausente → `PENDING_REFERENCE` e reprocessar depois
+- [ ] 9. Reversão que deixaria saldo negativo → **rejeitada explicitamente** com `failureCode` **diferente** do de BET sem saldo, auditável
+- [ ] Documentar qualquer interpretação adicional
+
+### 6.1 Fora de ordem [P3]
+- [ ] Worker agendado reprocessa `PENDING_REFERENCE` com **backoff exponencial**
+- [ ] Limite de tentativas ou TTL **definido e justificado**
+- [ ] Esgotou → `REJECTED` com `failureCode` de referência inexistente + **evento publicado**
+
+### 6.2 Códigos de falha [P1]
+- [ ] Toda rejeição tem `failureCode` estável e legível por máquina
+- [ ] Taxonomia própria, **documentada**, suficiente para o provedor decidir: reenviar, corrigir payload ou desistir
+- Sugestão: `INSUFFICIENT_FUNDS`, `REVERSAL_WOULD_OVERDRAW`, `CURRENCY_MISMATCH`, `WALLET_NOT_FOUND`, `REFERENCE_NOT_FOUND`, `REFERENCE_MISMATCH`, `REFERENCE_ALREADY_REVERSED`, `AMOUNT_MISMATCH`, `INVALID_REFERENCE_KIND`, `IDEMPOTENCY_CONFLICT`, `INVALID_PAYLOAD`
+
+---
+
+## 7. Concorrência (seção 8) [P1][E]
+
+- [ ] Unidade de concorrência = `walletId`
+- [ ] Correto quando: duas apostas disputam o mesmo saldo · vários workers na mesma wallet · wallets diferentes em paralelo · **3+ instâncias**
+- [ ] Estratégia escolhida e **justificada** (pessimista, otimista com retry limitado, update atômico condicionado ou combinação)
+- [ ] Recursos do broker (FIFO, dedup) = otimização; **o banco garante as invariantes**
+- [ ] **Cenário obrigatório:** saldo 100.00, duas BETs de 80.00 simultâneas →
+  - [ ] exatamente uma `PROCESSED`
+  - [ ] a outra `REJECTED` por saldo insuficiente
+  - [ ] saldo final `20.00`
+  - [ ] exatamente **um** débito no ledger
+  - [ ] nenhum retry duplica o débito
+
+---
+
+## 8. API HTTP (seção 9) [P1]
+
+### Criar wallet
+- [ ] `POST /wallets` com `{ playerId, initialBalance: { amount, currency } }`
+- [ ] Saldo inicial > 0 → transação interna `OPENING` + lançamento `CREDIT` **na mesma transação SQL**
+- [ ] Resposta: `{ id, playerId, balance: {amount, currency}, version: 1 }`
+- [ ] Duplicada (mesmo `playerId` + `currency`) → **conflito**
+
+### Consultas
+- [ ] `GET /wallets/:walletId`
+- [ ] `GET /wallets/:walletId/ledger?cursor=...&limit=50` — cursor **estável e opaco**
+- [ ] `GET /wagering/transactions/:transactionId`
+- [ ] `GET /providers/:providerId/wagering/transactions/:externalTransactionId`
+
+### Submeter transação
+- [ ] `POST /wagering/transactions` com header `Idempotency-Key`
+- [ ] Body: `providerId`, `externalTransactionId`, `playerId`, `walletId`, `roundId`, `gameId`, `kind`, `money` (+ `referenceExternalTransactionId` em REFUND/ROLLBACK)
+- [ ] Resposta: `{ transactionId, status, balance, idempotentReplay }`
+- Idempotência [E]:
+  - [ ] header **obrigatório** e é a fonte da verdade
+  - [ ] padrão recomendado: `"{providerId}:{externalTransactionId}"`
+  - [ ] `payloadHash` = hash de **JSON canônico** (chaves ordenadas) só dos campos de negócio; header e metadados de transporte **não entram**; **algoritmo documentado**
+  - [ ] requisição idêntica → mesma resposta com `idempotentReplay: true`
+  - [ ] mesma key + payload diferente → **conflito**, não replay
+
+### Status HTTP
+- [ ] Mapeamento seu, mas **consistente em todos os endpoints**, distinguindo:
+  - [ ] payload inválido (sugestão 400/422)
+  - [ ] conflito de idempotência (409)
+  - [ ] rejeição por regra de negócio (sugestão 422, ou 200 com `status: REJECTED` — decidir e documentar)
+  - [ ] aceite com processamento pendente (202)
+  - [ ] falha transitória de infraestrutura (503)
+- [ ] Documentar a tabela no ARCHITECTURE.md
+
+### Reconciliação
+- [ ] `POST /wallets/:walletId/reconciliation`
+- [ ] Resposta: `walletId`, `storedBalance`, `calculatedBalance`, `difference`, `consistent`, `checkedEntries`
+- [ ] Divergência **não é corrigida silenciosamente**: logada, contada em métrica e sinalizada na resposta
+
+### Health [P1]
+- [ ] `GET /health/live` — processo vivo
+- [ ] `GET /health/ready` — PostgreSQL **e** SQS alcançáveis
+- [ ] Sem autenticação
+
+---
+
+## 9. SQS (seção 10) [P2]
+
+- [ ] Filas: `wager-transactions.fifo` e `wager-transactions-dlq.fifo`
+- [ ] Mensagem: `{ messageId, type: "WagerTransactionRequested", occurredAt, data: {...mesmos campos + idempotencyKey} }`
+- Consumidor:
+  - [ ] reutiliza **o mesmo use case** do HTTP
+  - [ ] deduplica via **inbox persistente** por `(consumerName, messageId)`
+  - [ ] **ack (DeleteMessage) só depois do commit**
+  - [ ] distingue erros: **negócio** (terminal → ack) · **transitório** (retry com backoff) · **permanente** (DLQ)
+  - [ ] limite de tentativas antes da DLQ
+  - [ ] em `SIGTERM`: conclui as mensagens em andamento ou devolve a visibilidade
+  - [ ] redelivery sem duplicar efeito
+
+---
+
+## 10. Transactional Outbox (seção 11) [P2][E]
+
+- [ ] Transação + saldo + ledger + inbox (se veio da fila) + evento = **atômicos**
+- [ ] Worker publica pendentes; funciona com **vários publishers concorrentes** sem perder nem duplicar indefinidamente (dica: `FOR UPDATE SKIP LOCKED`)
+- [ ] Cenário: commit → processo morre antes de publicar → outra instância assume → publica → publicação duplicada continua segura para o consumidor
+- Eventos mínimos:
+  - [ ] `WagerTransactionProcessed` — qualquer aplicada, **inclusive LOSS**
+  - [ ] `WagerTransactionRejected` — rejeitada por regra de negócio
+  - [ ] `WalletBalanceChanged` — **somente** quando o saldo muda
+  - [ ] `WagerTransactionPendingReference` — referência ausente
+- Envelope:
+  - [ ] `abstract class IntegrationEvent<T>` com `abstract eventType`, `abstract version`, `eventId`, `aggregateId`, `correlationId`, `causationId?`, `occurredAt`, `data: Readonly<T>`, construtor `protected`
+  - [ ] `toJSON()` → `{ eventId, eventType, aggregateId, correlationId, causationId?, occurredAt (ISO-8601), version, data }`
+  - [ ] **Uma subclasse concreta por evento**, com `eventType` e `version` no tipo (não string solta)
+  - [ ] Ex.: `WalletBalanceChanged` com `walletId`, `transactionId`, `direction`, `money`, `balanceBefore`, `balanceAfter`, `walletVersion` + `static from(wallet, entry, ctx)`
+  - [ ] `data` carrega `MoneyProps` (string), **nunca** a instância de `Money`
+
+---
+
+## 11. Observabilidade (seção 12) [P2]
+
+- [ ] Logs **JSON** com `correlationId`, `messageId`, `transactionId`, `walletId`, `providerId`
+- [ ] Sem dados sensíveis nem payload financeiro completo nos logs
+- [ ] Métricas: transações por status · duplicatas detectadas · retries · mensagens em DLQ · conflitos de lock · outbox lag · latência de processamento
+- [ ] Health separado: liveness e readiness
+- [ ] [OPC] OpenTelemetry e dashboard
+
+---
+
+## 12. Testes obrigatórios (seção 13)
+
+### Unidade [P1]
+- [ ] `Money`: escala, arredondamento, entradas inválidas
+- [ ] invariantes da `Wallet`
+- [ ] regras de BET, WIN, LOSS, REFUND, ROLLBACK
+- [ ] conflito de moeda
+- [ ] idempotency key com payload divergente
+
+### Integração — Postgres e LocalStack **reais em containers** [E]
+- [ ] migrations e constraints
+- [ ] atomicidade entre wallet, ledger, inbox e outbox
+- [ ] inbox e redelivery
+- [ ] publishers concorrentes na mesma outbox
+- [ ] retry e DLQ
+- [ ] recuperação após reinicialização
+
+### Concorrência — paralelismo real, não mock sequencial
+- [ ] 1. mesma aposta **50 vezes em paralelo** → um único débito
+- [ ] 2. cenário 100/80
+- [ ] 3. wallets distintas em paralelo
+- [ ] 4. **≥ 3 processos/instâncias** simultâneos
+- [ ] 5. worker morto **depois do commit e antes do ack**
+- [ ] 6. dois publishers na mesma outbox
+- [ ] 7. ROLLBACK ou REFUND entregue antes da referência
+- [ ] 8. reinício do serviço com consistência final comprovada
+
+- [ ] **Invariante final em todos os testes:** `wallet.balance == saldo reconstruído pelo ledger`
+
+---
+
+## 13. Avaliação (seção 14) — 100 pontos
+
+| Área | Pts | O que olham |
+|---|---|---|
+| Correção financeira | 20 | Money, saldo, ledger, reversões, reconciliação |
+| Concorrência | 20 | lost update, hot wallet, múltiplas instâncias, locks |
+| Idempotência | 15 | dedup persistente, replay, payload conflitante |
+| Mensageria e falhas | 15 | inbox, outbox, retry, DLQ, crash recovery, shutdown |
+| Modelagem e arquitetura | 10 | invariantes em classes, boundaries, portas, simplicidade |
+| Testes | 10 | integração real, races, determinismo, falhas |
+| Observabilidade | 5 | logs, métricas, health, diagnóstico |
+| Documentação | 5 | README + ARCHITECTURE.md |
+
+### Falhas eliminatórias [E]
+- [ ] `number` para dinheiro
+- [ ] saldo negativo por race
+- [ ] débito ou crédito duplicado
+- [ ] idempotência só em memória
+- [ ] correto só com uma instância
+- [ ] evento publicado antes do commit
+- [ ] sem ledger auditável
+- [ ] testes que trocam **completamente** PostgreSQL e SQS por mocks
+
+### Diferencial [OPC]
+- [ ] Teste de carga em `bun run test:load` registrando: ambiente, metodologia, throughput, p50/p95/p99, taxa de erro, conflitos de concorrência, outbox lag. Sem meta de RPS; vale a honestidade da análise.
+
+---
+
+## 14. Entregáveis
+
+### `README.md`
+- [ ] Pré-requisitos (Bun, Docker)
+- [ ] Como subir (`docker compose up -d`, migrations, `bun run start`)
+- [ ] Como rodar cada suíte de teste
+- [ ] Exemplos de chamadas (curl)
+
+### `ARCHITECTURE.md` — tudo que o README oficial manda justificar
+- [ ] Escolha do ORM
+- [ ] Mapeamento do `Money` na persistência
+- [ ] Estratégia transacional
+- [ ] Estratégia de concorrência e por quê
+- [ ] Decisão sobre autenticação + desenho alternativo + ponto de extensão
+- [ ] Diagrama/tabela de transições de status da `WagerTransaction`
+- [ ] Taxonomia de `failureCode`
+- [ ] Algoritmo do `payloadHash`
+- [ ] Limite/TTL do `PENDING_REFERENCE` e justificativa
+- [ ] Mapeamento de status HTTP
+- [ ] Schema: constraints e índices e o que cada um garante
+- [ ] Interpretações adicionais das regras
+- [ ] Trade-offs e **limitações conhecidas** (o que não deu tempo e como faria)
+- [ ] Uso de IA no desenvolvimento e como o código foi validado (a vaga cita isso)
+
+---
+
+## 15. Plano de execução
+
+**Sexta à noite (hoje)**
+1. Instalar Bun, Docker, Git; criar repo público no GitHub
+2. `docker-compose.yml` com Postgres + LocalStack (+ criação das filas FIFO e DLQ)
+3. Projeto Nest rodando com Bun + `GET /health/live`
+
+**Sábado — P1 completa**
+4. `Money` + testes unitários
+5. Entidades/schema MikroORM + migrations reversíveis + constraints
+6. `Wallet` + `WalletLedgerEntry` + `POST /wallets` com OPENING
+7. `WagerTransaction` + BET/WIN/LOSS + failureCodes
+8. Lock por wallet + teste 100/80 + 50 em paralelo
+9. Idempotency-Key + payloadHash + replay/conflito
+10. GETs + reconciliação + `GET /health/ready`
+
+**Domingo — P2 (+ P3 se der)**
+11. Outbox + eventos + worker com `SKIP LOCKED`
+12. Consumer SQS + inbox + ack após commit + DLQ + SIGTERM
+13. Teste com 3 instâncias
+14. Logs JSON + métricas
+15. REFUND/ROLLBACK + PENDING_REFERENCE worker
+
+**Segunda até 15h**
+16. Clonar o repo do zero numa pasta nova e rodar tudo seguindo só o README
+17. Finalizar README e ARCHITECTURE.md
+18. Revisar este checklist inteiro e entregar

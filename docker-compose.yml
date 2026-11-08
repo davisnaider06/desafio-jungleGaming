@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: wagering
+      POSTGRES_PASSWORD: wagering
+      POSTGRES_DB: wagering
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  ministack:
+    image: ministackorg/ministack:latest
+    environment:
+      SERVICES: sqs
+    ports:
+      - "4566:4566"
+
+volumes:
+  pgdata:

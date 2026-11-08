@@ -15,7 +15,7 @@ As decisões de projeto, o schema e as limitações conhecidas estão em [ARCHIT
 
 ```bash
 bun install
-docker compose up -d          # Postgres (5432) e MiniStack/SQS (4566)
+docker compose up -d --wait   # Postgres (5432) e MiniStack/SQS (4566); espera ficarem saudáveis
 bun run queues:create         # cria wager-transactions.fifo, a DLQ (com RedrivePolicy) e wager-events.fifo
 bun run migration:up          # aplica as migrations
 bun run start                 # sobe em http://localhost:3000
@@ -48,6 +48,12 @@ bun run typecheck
 ```
 
 Os testes de multi-instância sobem processos reais (`bun src/main.ts`) e matam um com `SIGKILL` no meio do processamento.
+
+## Prova de Fogo (teste manual adversarial)
+
+Além da suíte automatizada, há um painel para tentar quebrar o serviço de propósito: duplo clique, rajadas concorrentes, dinheiro inválido, payload malicioso, reversões adulteradas, mensagem fora de ordem, banco caindo no meio e lixo na fila. Cada ataque mostra o risco, as requisições enviadas, o estado final do banco e qual defesa do código segurou.
+
+Com a API rodando, em outro terminal: `bun run fogo` e abra http://localhost:4000. Detalhes em [tools/prova-de-fogo/README.md](tools/prova-de-fogo/README.md).
 
 ## API
 

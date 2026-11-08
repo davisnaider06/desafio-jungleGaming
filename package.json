@@ -17,6 +17,7 @@
     "test:integration": "bun test test/integration --timeout 60000",
     "test:concurrency": "bun test test/concurrency --timeout 120000",
     "queues:create": "bun scripts/create-queues.ts",
+    "fogo": "bun tools/prova-de-fogo/server.ts",
     "migration:create": "bun --bun node_modules/@mikro-orm/cli/cli.js migration:create",
     "migration:up": "bun --bun node_modules/@mikro-orm/cli/cli.js migration:up",
     "migration:down": "bun --bun node_modules/@mikro-orm/cli/cli.js migration:down"

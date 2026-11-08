@@ -13,10 +13,19 @@ import { errorFields, logger } from '../observability/logger';
 import { M, metrics } from '../observability/metrics';
 import { APP_CONFIG } from '../tokens';
 import { PendingReferenceProcessor } from '../wagering/application/pending-reference.processor';
-import { BackgroundLoop } from './background-loop';
+import { BackgroundLoop, type BackgroundLoopHooks } from './background-loop';
 
-const logLoopError = (name: string, error: unknown) =>
-  logger.error('background loop failed', { loop: name, ...errorFields(error) });
+// Loga ao entrar em falha (com o próximo atraso) e ao se recuperar; não a cada tentativa.
+const loopHooks: BackgroundLoopHooks = {
+  onFailure: (name, error, { nextDelayMs }) =>
+    logger.error('background loop failed, retrying with backoff', {
+      loop: name,
+      nextDelayMs,
+      ...errorFields(error),
+    }),
+  onRecovered: (name, { failures }) =>
+    logger.info('background loop recovered', { loop: name, failures }),
+};
 
 /**
  * Liga os workers em segundo plano quando a aplicação sobe e os desliga com calma no SIGTERM.
@@ -53,7 +62,7 @@ export class WorkersLifecycle
           'outbox-publisher',
           async () => void (await this.publisher.runOnce()),
           workers.outboxIntervalMs,
-          logLoopError,
+          loopHooks,
         ),
       );
     }
@@ -64,7 +73,7 @@ export class WorkersLifecycle
           'sqs-consumer',
           async () => void (await this.consumer.pollOnce()),
           50,
-          logLoopError,
+          loopHooks,
         ),
       );
     }
@@ -74,7 +83,7 @@ export class WorkersLifecycle
           'pending-reference',
           async () => void (await this.pending.runOnce()),
           workers.pendingIntervalMs,
-          logLoopError,
+          loopHooks,
         ),
       );
     }

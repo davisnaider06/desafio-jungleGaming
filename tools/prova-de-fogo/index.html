@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Prova de Fogo — Raio-X</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --card2:#1f232c; --line:#2a2f3a; --txt:#e6e8ee; --mut:#8b93a7; --ok:#3fb950; --bad:#f85149; --acc:#ff7a1a; --blue:#58a6ff; }
+  * { box-sizing:border-box }
+  body { margin:0; font:14px/1.55 system-ui, sans-serif; background:var(--bg); color:var(--txt) }
+  header { padding:16px 24px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:center; flex-wrap:wrap; position:sticky; top:0; background:var(--bg); z-index:2 }
+  h1 { margin:0; font-size:20px } h1 span { color:var(--acc) }
+  main { padding:20px 24px; display:grid; grid-template-columns: 340px 1fr; gap:20px }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px }
+  .scn { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--line) }
+  .scn:last-child { border-bottom:0 } .scn small { display:block; color:var(--mut) }
+  button { background:#232834; color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:6px 10px; cursor:pointer; white-space:nowrap }
+  button:hover { border-color:var(--acc) } button.primary { background:var(--acc); color:#111; border-color:var(--acc); font-weight:600 }
+  .badge { font-size:12px; padding:2px 8px; border-radius:99px; border:1px solid var(--line); color:var(--mut) }
+  .badge.ok { color:var(--ok); border-color:var(--ok) } .badge.bad { color:var(--bad); border-color:var(--bad) }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--mut); margin:4px 0 8px }
+  .result { background:var(--card2); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:16px }
+  .result > h3 { margin:0 0 10px; font-size:16px; display:flex; gap:8px; align-items:center }
+  .sec { margin-top:12px } .sec > h4 { margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--acc) }
+  .sec p { margin:0 0 6px }
+  table { width:100%; border-collapse:collapse; font-size:13px }
+  td, th { padding:4px 6px; border-top:1px solid var(--line); vertical-align:top; text-align:left } th { color:var(--mut); font-weight:500 }
+  td.s { width:22px } .pass { color:var(--ok) } .fail { color:var(--bad) }
+  code, pre { font-family: ui-monospace, Consolas, monospace; font-size:12px }
+  pre { margin:4px 0; padding:8px; background:#0b0d11; border:1px solid var(--line); border-radius:6px; white-space:pre-wrap; word-break:break-word; max-height:220px; overflow:auto }
+  details { border:1px solid var(--line); border-radius:6px; padding:6px 8px; margin:4px 0; background:#14171d }
+  summary { cursor:pointer } summary code { color:var(--txt) }
+  .st { font-weight:600 } .st2 { color:var(--ok) } .st4 { color:#e3b341 } .st5 { color:var(--bad) }
+  .def { border-left:3px solid var(--blue); padding:4px 10px; margin:6px 0; background:#121821 }
+  .def b { color:var(--blue) } .def code { color:var(--mut) }
+  #summary { font-weight:600 }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔥 Prova de <span>Fogo</span> · raio-x</h1>
+  <span id="health" class="badge">health: ?</span>
+  <button onclick="checkHealth()">checar health</button>
+  <button class="primary" onclick="runAll()">rodar todos (sem infra)</button>
+  <button onclick="clearOut()">limpar</button>
+  <span id="summary"></span>
+</header>
+<main>
+  <section>
+    <div class="card"><h2>Ataques de aplicação</h2><div id="list-app"></div></div>
+    <div class="card" style="margin-top:16px"><h2>Ataques de infraestrutura</h2>
+      <small style="color:var(--mut)">Precisam do COMPOSE_DIR. Rode um por vez.</small><div id="list-infra"></div></div>
+  </section>
+  <section><div id="out"><div class="card"><code>Clique num ataque. Cada resultado mostra: o risco, cada requisição enviada, o estado final do banco e a defesa que segurou o ataque.</code></div></div></section>
+</main>
+
+<script>
+// ================= utilitários + gravação do "raio-x" =================
+const uid = () => crypto.randomUUID();
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+let totals = { pass: 0, fail: 0 };
+let trace = [];          // tudo que foi enviado/recebido no ataque atual
+let currentGroup = null; // rótulo da etapa atual (ex.: "rajada de 50")
+
+function step(label) { currentGroup = label; }
+
+async function api(method, path, body, headers = {}, opts = {}) {
+  const started = performance.now();
+  const res = await fetch('/api' + path, {
+    method,
+    headers: { 'content-type': 'application/json', ...headers },
+    body: body === undefined ? undefined : (typeof body === 'string' ? body : JSON.stringify(body)),
+  });
+  const text = await res.text();
+  let json; try { json = JSON.parse(text); } catch { json = text; }
+  if (!opts.silent) {
+    trace.push({ group: currentGroup, method, path, key: headers['idempotency-key'], body, status: res.status,
+      ms: Math.round(performance.now() - started), response: json });
+  }
+  return { status: res.status, body: json };
+}
+async function ops(name, body) {
+  trace.push({ group: currentGroup, method: 'OPS', path: name, body, status: '…', ms: 0, response: '(comando de infraestrutura via docker compose)' });
+  const r = await fetch('/ops/' + name, { method: 'POST', headers: {'content-type':'application/json'}, body: JSON.stringify(body ?? {}) });
+  const j = await r.json(); trace[trace.length - 1].status = j.code === 0 ? 'ok' : 'erro'; trace[trace.length - 1].response = j.out;
+  return j;
+}
+
+async function createWallet(amount, currency = 'BRL') {
+  const playerId = 'player-' + uid().slice(0, 8);
+  const r = await api('POST', '/wallets', { playerId, initialBalance: { amount, currency } });
+  if (r.status !== 201) throw new Error('falha ao criar wallet: ' + r.status + ' ' + JSON.stringify(r.body));
+  return { id: r.body.id, playerId };
+}
+function tx(w, kind, amount, extra = {}) {
+  return {
+    providerId: 'provider-fogo', externalTransactionId: extra.ext ?? 'ext-' + uid().slice(0, 8),
+    playerId: extra.playerId ?? w.playerId, walletId: w.id, roundId: extra.round ?? 'round-1', gameId: 'jogo-teste',
+    kind, money: { amount, currency: extra.currency ?? 'BRL' },
+    ...(extra.ref ? { referenceExternalTransactionId: extra.ref } : {}),
+  };
+}
+function send(payload, key) {
+  const k = key === null ? {} : { 'idempotency-key': key ?? `${payload.providerId}:${payload.externalTransactionId}` };
+  return api('POST', '/wagering/transactions', payload, k);
+}
+async function balance(w) { return (await api('GET', '/wallets/' + w.id, undefined, {}, { silent: true })).body.balance?.amount; }
+async function waitFor(fn, ms = 15000, stepMs = 500) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(stepMs); }
+  return null;
+}
+const check = (name, exp, got) => ({ name, exp: JSON.stringify(exp), got: JSON.stringify(got), ok: JSON.stringify(exp) === JSON.stringify(got) });
+
+// Estado final do banco (silencioso, para não poluir a lista de ataques)
+async function snapshot(w) {
+  const [wal, led, rec] = await Promise.all([
+    api('GET', '/wallets/' + w.id, undefined, {}, { silent: true }),
+    api('GET', `/wallets/${w.id}/ledger?limit=200`, undefined, {}, { silent: true }),
+    api('POST', `/wallets/${w.id}/reconciliation`, undefined, {}, { silent: true }),
+  ]);
+  return { wallet: wal.body, ledger: led.body.items ?? [], recon: rec.body };
+}
+
+// ================= renderização do raio-x =================
+const esc = (s) => String(s).replace(/[&<>]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[c]));
+const pretty = (v) => esc(typeof v === 'string' ? v : JSON.stringify(v, null, 2));
+const stClass = (s) => typeof s === 'number' ? 'st' + String(s)[0] : '';
+
+function renderTrace(items) {
+  // agrupa por etapa; etapas com muitas requisições viram resumo + amostras
+  const groups = []; for (const t of items) {
+    const g = groups.find(x => x.label === (t.group ?? 'requisições')); if (g) g.items.push(t); else groups.push({ label: t.group ?? 'requisições', items: [t] });
+  }
+  return groups.map(g => {
+    if (g.items.length > 6) {
+      const count = {}; g.items.forEach(t => count[t.status] = (count[t.status] ?? 0) + 1);
+      const resumo = Object.entries(count).map(([s, n]) => `<span class="st ${stClass(+s)}">${n}× ${s}</span>`).join(' · ');
+      const sample = [g.items[0], g.items[g.items.length - 1]];
+      return `<p><b>${esc(g.label)}</b> — ${g.items.length} requisições ao mesmo tempo: ${resumo}</p>` + sample.map((t, i) => one(t, i === 0 ? 'primeira' : 'última')).join('');
+    }
+    return `<p><b>${esc(g.label)}</b></p>` + g.items.map(t => one(t)).join('');
+  }).join('');
+}
+function one(t, tag) {
+  const keyTxt = t.key ? ` <code>Idempotency-Key: ${esc(t.key)}</code>` : (t.method === 'POST' && t.path === '/wagering/transactions' ? ' <code>(sem Idempotency-Key)</code>' : '');
+  return `<details><summary>${tag ? `<small>[${tag}]</small> ` : ''}<code>${t.method} ${esc(t.path)}</code> → <span class="st ${stClass(t.status)}">${t.status}</span> <small>${t.ms}ms</small>${keyTxt}</summary>
+    ${t.body !== undefined ? `<small>enviado:</small><pre>${pretty(t.body)}</pre>` : ''}<small>resposta:</small><pre>${pretty(t.response)}</pre></details>`;
+}
+function renderSnapshot(s) {
+  if (!s) return '';
+  const rows = s.ledger.map(e => {
+    const amt = e.money?.amount ?? e.amount; const bb = e.balanceBefore?.amount ?? e.balanceBefore; const ba = e.balanceAfter?.amount ?? e.balanceAfter;
+    return `<tr><td>${esc(e.walletVersion ?? '?')}</td><td>${esc(e.direction ?? '?')}</td><td>${esc(amt ?? '?')}</td><td>${esc(bb ?? '?')} → ${esc(ba ?? '?')}</td><td><code>${esc((e.transactionId ?? '').slice(0, 8))}</code></td></tr>`;
+  }).join('');
+  return `<div class="sec"><h4>Estado final no banco</h4>
+    <p>Saldo <b>${esc(s.wallet.balance?.amount)}</b> · versão <b>${esc(s.wallet.version)}</b> ·
+      reconciliação: guardado ${esc(s.recon.storedBalance?.amount)} vs. soma do extrato ${esc(s.recon.calculatedBalance?.amount)}
+      → <span class="${s.recon.consistent ? 'pass' : 'fail'}">${s.recon.consistent ? 'consistente' : 'DIVERGENTE'}</span> (${esc(s.recon.checkedEntries)} lançamentos)</p>
+    <details><summary>extrato (ledger) — ${s.ledger.length} linhas</summary><table><tr><th>versão</th><th>direção</th><th>valor</th><th>saldo antes → depois</th><th>transação</th></tr>${rows}</table></details></div>`;
+}
+function report(sc, checks, snap, error) {
+  const ok = !error && checks.every(c => c.ok);
+  totals[ok ? 'pass' : 'fail']++;
+  document.getElementById('summary').textContent = `✅ ${totals.pass}  ❌ ${totals.fail}`;
+  const rows = checks.map(c => `<tr><td class="s ${c.ok ? 'pass':'fail'}">${c.ok ? '✔':'✘'}</td><td>${esc(c.name)}</td><td><code>esperado ${esc(c.exp)}</code></td><td><code>veio ${esc(c.got)}</code></td></tr>`).join('');
+  const defesas = (sc.defesa ?? []).map(d => `<div class="def"><b>${esc(d.camada)}</b> — ${d.como}<br><code>${esc(d.onde)}</code></div>`).join('');
+  const html = `<div class="result"><h3><span class="badge ${ok ? 'ok':'bad'}">${ok ? 'PASSOU':'FALHOU'}</span>${esc(sc.t)}</h3>
+    <div class="sec"><h4>O risco</h4><p>${sc.risco}</p></div>
+    <div class="sec"><h4>O ataque (o que foi enviado)</h4>${renderTrace(trace)}</div>
+    ${error ? `<div class="sec"><h4>Erro inesperado no painel</h4><pre>${esc(error)}</pre></div>` : ''}
+    ${renderSnapshot(snap)}
+    <div class="sec"><h4>Veredito</h4><table>${rows}</table></div>
+    <div class="sec"><h4>${ok ? 'Por que aguentou (as defesas que seguraram)' : 'Onde investigar (as defesas que deveriam ter segurado)'}</h4>${defesas}</div>
+    ${sc.note ? `<div class="sec"><h4>Para ver com os próprios olhos</h4><p>${sc.note}</p></div>` : ''}</div>`;
+  const out = document.getElementById('out');
+  if (!out.querySelector('.result')) out.innerHTML = '';
+  out.insertAdjacentHTML('afterbegin', html);
+}
+
+// ================= ataques =================
+// Cada ataque: t (título), d (resumo), risco, defesa[] (camada, como, onde), fn() → { checks, wallet }
+const UC = 'src/wagering/application/process-wager-transaction.usecase.ts';
+const APP = [
+  { t: 'Fluxo feliz', d: 'BET, WIN e LOSS na ordem certa',
+    risco: 'Antes de atacar, provar que o básico está certo: aposta debita, prêmio credita e derrota <b>não</b> mexe no saldo (o dinheiro já saiu na aposta).',
+    defesa: [
+      { camada: 'Domínio', como: 'o processador decide o efeito de cada tipo; LOSS tem <code>affectsBalance() = false</code> e não gera lançamento.', onde: 'src/wagering/domain/wager-processor.ts · wager-transaction.ts' },
+      { camada: 'Banco', como: 'cada lançamento precisa fechar a conta: <code>saldo_antes ± valor = saldo_depois</code>, senão o Postgres recusa.', onde: 'constraint ck_ledger_balanced (migration 003514)' },
+    ],
+    fn: async () => {
+      step('criar wallet com 100.00'); const w = await createWallet('100.00');
+      step('BET 30, WIN 50, LOSS 10 (em sequência)');
+      const b = await send(tx(w, 'BET', '30.00')); const win = await send(tx(w, 'WIN', '50.00')); const loss = await send(tx(w, 'LOSS', '10.00', { round: 'round-2' }));
+      return { wallet: w, checks: [check('BET → 201', 201, b.status), check('saldo após BET', '70.00', b.body.balance?.amount),
+        check('WIN → 201', 201, win.status), check('LOSS → 201', 201, loss.status), check('saldo final (LOSS não mexe)', '120.00', await balance(w))] };
+    }},
+  { t: 'Duplo clique', d: 'mesma aposta enviada 2x (mesma chave)',
+    risco: 'A resposta da 1ª aposta se perde na rede e o provedor reenvia. Se o sistema processar de novo, o jogador perde R$ 10 sem ter apostado.',
+    defesa: [
+      { camada: 'Idempotência (caminho rápido)', como: 'antes de qualquer lock, busca a transação pela <code>Idempotency-Key</code>. Achou → devolve a resposta original (com o saldo daquele momento) e <code>idempotentReplay: true</code>.', onde: UC + ' · método submit, "Caminho rápido"' },
+      { camada: 'Banco', como: 'mesmo que o código falhe, a chave é única na tabela: um segundo insert com a mesma chave é recusado.', onde: 'constraint uq_wager_tx_idempotency_key' },
+    ],
+    fn: async () => {
+      step('criar wallet com 100.00'); const w = await createWallet('100.00'); const p = tx(w, 'BET', '10.00');
+      step('1º envio'); const a = await send(p); step('2º envio, idêntico'); const b = await send(p);
+      return { wallet: w, checks: [check('1ª → 201', 201, a.status), check('2ª → 200 (replay)', 200, b.status), check('2ª marcada como replay', true, b.body.idempotentReplay),
+        check('mesmo transactionId', a.body.transactionId, b.body.transactionId), check('debitou uma vez só', '90.00', await balance(w))] };
+    }},
+  { t: 'Clique frenético', d: 'mesma aposta 50x em paralelo',
+    risco: 'As 50 chegam no mesmo milissegundo: todas perguntam "essa chave existe?" e todas ouvem "não". Sem proteção, as 50 debitariam.',
+    defesa: [
+      { camada: 'Lock por wallet (pessimista)', como: '<code>SELECT ... FOR UPDATE</code> na linha da wallet: as 50 entram na fila, uma por vez.', onde: 'src/persistence/wallet.repository.ts · findByIdForUpdate (LockMode.PESSIMISTIC_WRITE)' },
+      { camada: 'Idempotência depois do lock', como: 'quem passa o lock checa a chave DE NOVO. A 2ª em diante já enxerga o commit da 1ª → vira replay. Resultado: 1 débito, 49 replays.', onde: UC + ' · comentário "IDEMPOTÊNCIA: checa de novo DEPOIS do lock"' },
+      { camada: 'Rede de segurança', como: 'se ainda assim duas tentarem gravar, o banco recusa a chave duplicada e o código trata o erro tentando de novo (aí vira replay).', onde: UC + ' · UniqueConstraintViolationException + uq_wager_tx_idempotency_key' },
+    ],
+    fn: async () => {
+      step('criar wallet com 100.00'); const w = await createWallet('100.00'); const p = tx(w, 'BET', '10.00');
+      step('rajada: a MESMA aposta 50x'); const rs = await Promise.all(Array.from({ length: 50 }, () => send(p)));
+      return { wallet: w, checks: [check('exatamente 1 resposta 201', 1, rs.filter(r => r.status === 201).length),
+        check('49 replays (200)', 49, rs.filter(r => r.status === 200).length),
+        check('todas com o mesmo transactionId', 1, new Set(rs.map(r => r.body.transactionId)).size), check('saldo (um débito só)', '90.00', await balance(w))] };
+    }},
+  { t: 'Chave reaproveitada, valor diferente', d: 'mesma Idempotency-Key, payload alterado',
+    risco: 'Alguém reusa uma chave já usada com outro valor (bug no provedor ou tentativa de fraude). Não pode ser tratado como replay nem processado de novo.',
+    defesa: [
+      { camada: 'payloadHash', como: 'na 1ª vez é guardado o SHA-256 do JSON canônico (chaves em ordem) dos campos de negócio. No reenvio, compara: hash diferente = conflito.', onde: 'src/shared/canonical-hash.ts · ' + UC + ' · método replay' },
+      { camada: 'HTTP', como: 'conflito vira <code>409</code>, que diz ao provedor "corrija, não reenvie igual".', onde: 'src/http/http-exception.filter.ts' },
+    ],
+    fn: async () => {
+      step('criar wallet com 100.00'); const w = await createWallet('100.00'); const p = tx(w, 'BET', '10.00');
+      step('aposta original (10.00)'); await send(p);
+      step('mesma chave, valor 99.00'); const r = await send({ ...p, money: { amount: '99.00', currency: 'BRL' } });
+      return { wallet: w, checks: [check('→ 409 conflito', 409, r.status), check('saldo só com a 1ª', '90.00', await balance(w))] };
+    }},
+  { t: 'Corrida 100/80', d: 'duas apostas de 80 ao mesmo tempo com saldo 100',
+    risco: 'O cenário obrigatório do desafio. As duas leem "saldo 100" ao mesmo tempo, as duas acham que dá, e o saldo vai para -60.',
+    defesa: [
+      { camada: 'Lock por wallet (pessimista)', como: 'a 1ª trava a wallet, debita 80 e grava 20. A 2ª estava esperando o lock, lê saldo 20 e o domínio recusa com INSUFFICIENT_FUNDS.', onde: 'src/persistence/wallet.repository.ts · findByIdForUpdate' },
+      { camada: 'Banco', como: 'saldo nunca negativo e um lançamento por versão da wallet: mesmo se o lock falhasse, o Postgres recusaria.', onde: 'ck_wallets_balance_non_negative · uq_ledger_wallet_version' },
+    ],
+    fn: async () => {
+      step('criar wallet com 100.00'); const w = await createWallet('100.00');
+      step('duas BETs de 80 ao mesmo tempo'); const rs = await Promise.all([send(tx(w, 'BET', '80.00')), send(tx(w, 'BET', '80.00'))]);
+      return { wallet: w, checks: [check('uma 201 e uma 422', [201, 422], rs.map(r => r.status).sort()),
+        check('motivo da recusa', 'INSUFFICIENT_FUNDS', rs.find(r => r.status === 422)?.body.failureCode), check('saldo final', '20.00', await balance(w))] };
+    }},
+  { t: 'Hot wallet', d: '60 apostas diferentes de 1.00 com saldo 40.00',
+    risco: 'Uma wallet sob bombardeio: muitas apostas legítimas e diferentes disputando o mesmo saldo. Nenhuma pode "furar" o saldo e nenhuma pode ser perdida.',
+    defesa: [
+      { camada: 'Lock por wallet', como: 'as 60 passam uma por vez; cada uma enxerga o saldo já atualizado pela anterior. Exatamente 40 cabem.', onde: 'src/persistence/wallet.repository.ts' },
+      { camada: 'Versão da wallet', como: 'cada débito sobe a versão; o update só grava se a versão for a esperada e o extrato não aceita duas linhas com a mesma versão.', onde: 'wallet.repository.ts (update com version) · uq_ledger_wallet_version' },
+    ],
+    fn: async () => {
+      step('criar wallet com 40.00'); const w = await createWallet('40.00');
+      step('rajada: 60 apostas DIFERENTES de 1.00'); const rs = await Promise.all(Array.from({ length: 60 }, () => send(tx(w, 'BET', '1.00'))));
+      return { wallet: w, checks: [check('40 aceitas', 40, rs.filter(r => r.status === 201).length), check('20 recusadas', 20, rs.filter(r => r.status === 422).length),
+        check('nenhum erro 5xx', 0, rs.filter(r => r.status >= 500).length), check('saldo zerado, nunca negativo', '0.00', await balance(w))] };
+    }},
+  { t: 'Dinheiro inválido', d: 'number, notação científica, negativo, 3 casas, vazio, texto, zero',
+    risco: 'Valores que quebrariam a conta: <code>25</code> como number (float), <code>1e3</code>, negativo (aposta que vira crédito!), centavo com 3 casas.',
+    defesa: [
+      { camada: 'Money', como: 'só aceita string no formato <code>^\\d{1,18}(\\.\\d{1,2})?$</code>: dígitos, ponto opcional, até 2 casas. Number é recusado pelo <code>typeof</code>.', onde: 'src/shared/money.ts · Money.from / INPUT_AMOUNT' },
+      { camada: 'Validação do payload', como: 'o erro do Money vira InvalidPayloadError → <code>400</code>, antes de abrir transação no banco.', onde: 'src/wagering/application/wager-payload.ts' },
+      { camada: 'Banco', como: 'valor de transação e de lançamento precisa ser > 0.', onde: 'ck_wager_tx_amount_positive · ck_ledger_amount_positive' },
+    ],
+    fn: async () => {
+      step('criar wallet com 100.00'); const w = await createWallet('100.00');
+      const bad = [25, '1e3', '-1.00', '10.001', '', 'abc', '0.00', ' 5.00']; const checks = [];
+      for (const amount of bad) { step(`amount = ${JSON.stringify(amount)}`); const p = tx(w, 'BET', 'x'); p.money.amount = amount; const r = await send(p); checks.push(check(`amount ${JSON.stringify(amount)} → 400`, 400, r.status)); }
+      checks.push(check('saldo intacto', '100.00', await balance(w))); return { wallet: w, checks };
+    }},
+  { t: 'Payload malicioso', d: 'OPENING pela API, kind inventado, sem chave, JSON quebrado',
+    risco: '<code>OPENING</code> é o crédito interno de abertura: se a API aceitasse, qualquer um criaria dinheiro do nada.',
+    defesa: [
+      { camada: 'Validação do payload', como: 'só BET, WIN, LOSS, REFUND e ROLLBACK são aceitos de fora; OPENING não está na lista.', onde: 'src/wagering/application/wager-payload.ts · SUBMITTABLE_KINDS' },
+      { camada: 'Idempotency-Key obrigatória', como: 'sem o header, 400 antes de qualquer processamento.', onde: UC },
+      { camada: 'Banco', como: 'kind e status só aceitam valores conhecidos.', onde: 'ck_wager_tx_kind · ck_wager_tx_status' },
+    ],
+    fn: async () => {
+      step('criar wallet com 100.00'); const w = await createWallet('100.00');
+      step('kind OPENING de 1000.00'); const opening = await send(tx(w, 'OPENING', '1000.00'));
+      step('kind inventado "JACKPOT"'); const inventado = await send(tx(w, 'JACKPOT', '1000.00'));
+      step('sem Idempotency-Key'); const semChave = await send(tx(w, 'BET', '10.00'), null);
+      step('JSON quebrado'); const quebrado = await api('POST', '/wagering/transactions', '{"kind": "BET",', { 'idempotency-key': 'x:' + uid() });
+      return { wallet: w, checks: [check('OPENING → 400', 400, opening.status), check('kind inventado → 400', 400, inventado.status),
+        check('sem Idempotency-Key → 400', 400, semChave.status), check('JSON quebrado → 400', 400, quebrado.status), check('saldo intacto', '100.00', await balance(w))] };
+    }},
+  { t: 'Moeda e dono errados', d: 'USD numa wallet BRL; player que não é dono',
+    risco: 'Somar dólar com real, ou um jogador apostando com a wallet de outro.',
+    defesa: [
+      { camada: 'Domínio', como: 'o processador compara moeda e dono com a wallet e devolve REJECTED com código próprio (422), sem tocar no saldo nem gerar lançamento.', onde: 'src/wagering/domain/wager-processor.ts · failure-codes.ts' },
+      { camada: 'Money', como: 'mesmo que passasse, somar moedas diferentes lança CurrencyMismatchError.', onde: 'src/shared/money.ts · assertSameCurrency' },
+    ],
+    fn: async () => {
+      step('criar wallet BRL com 100.00'); const w = await createWallet('100.00');
+      step('BET em USD'); const usd = await send(tx(w, 'BET', '10.00', { currency: 'USD' }));
+      step('BET com outro playerId'); const intruso = await send(tx(w, 'BET', '10.00', { playerId: 'intruso' }));
+      return { wallet: w, checks: [check('USD → 422', 422, usd.status), check('código', 'CURRENCY_MISMATCH', usd.body.failureCode),
+        check('player errado → 422', 422, intruso.status), check('código', 'WALLET_PLAYER_MISMATCH', intruso.body.failureCode), check('saldo intacto', '100.00', await balance(w))] };
+    }},
+  { t: 'Wallet duplicada', d: 'mesmo player e moeda duas vezes',
+    risco: 'Duas wallets do mesmo jogador na mesma moeda: o saldo ficaria dividido e as regras perdem sentido.',
+    defesa: [{ camada: 'Banco', como: 'unique em (player_id, currency): o segundo insert é recusado e vira 409. Outra moeda é permitida.', onde: 'uq_wallets_player_currency · src/wallets/application/wallet.service.ts' }],
+    fn: async () => {
+      const playerId = 'player-' + uid().slice(0, 8); const body = { playerId, initialBalance: { amount: '10.00', currency: 'BRL' } };
+      step('1ª wallet BRL'); const a = await api('POST', '/wallets', body); step('2ª wallet BRL (mesmo player)'); const b = await api('POST', '/wallets', body);
+      step('wallet USD (mesmo player)'); const usd = await api('POST', '/wallets', { playerId, initialBalance: { amount: '10.00', currency: 'USD' } });
+      return { wallet: null, checks: [check('1ª → 201', 201, a.status), check('2ª → 409', 409, b.status), check('outra moeda → 201', 201, usd.status)] };
+    }},
+  { t: 'Reversão dupla', d: 'REFUND e depois ROLLBACK da mesma BET',
+    risco: 'Pela regra literal do enunciado ("não reverter duas vezes pelo MESMO tipo"), uma BET poderia receber um REFUND e um ROLLBACK, devolvendo o dinheiro duas vezes.',
+    defesa: [
+      { camada: 'Decisão de projeto', como: 'regra mais rígida que o enunciado: uma referência aceita só UMA reversão, de qualquer tipo (documentado no ARCHITECTURE.md).', onde: 'ARCHITECTURE.md · seção Reversões' },
+      { camada: 'Banco', como: 'índice único parcial: <code>reference_transaction_id</code> único entre REFUND e ROLLBACK.', onde: 'uq_wager_tx_single_reversal (migration 003514)' },
+    ],
+    fn: async () => {
+      step('criar wallet com 100.00 e apostar 10'); const w = await createWallet('100.00'); const bet = tx(w, 'BET', '10.00'); await send(bet);
+      step('REFUND da BET'); const refund = await send(tx(w, 'REFUND', '10.00', { ref: bet.externalTransactionId }));
+      step('ROLLBACK da mesma BET'); const rollback = await send(tx(w, 'ROLLBACK', '10.00', { ref: bet.externalTransactionId }));
+      return { wallet: w, checks: [check('REFUND → 201', 201, refund.status), check('ROLLBACK → 422', 422, rollback.status),
+        check('código', 'REFERENCE_ALREADY_REVERSED', rollback.body.failureCode), check('saldo (devolveu uma vez)', '100.00', await balance(w))] };
+    }},
+  { t: 'Reversão adulterada', d: 'REFUND com valor ou rodada diferentes da BET',
+    risco: 'Apostar 10 e pedir REFUND de 50, ou reverter usando uma aposta de outra rodada.',
+    defesa: [{ camada: 'Domínio', como: 'a reversão precisa bater com a referência: mesmo valor, provider, player, wallet, moeda e rodada.', onde: 'src/wagering/domain/wager-processor.ts · AMOUNT_MISMATCH / REFERENCE_MISMATCH' }],
+    fn: async () => {
+      step('criar wallet com 100.00 e apostar 10'); const w = await createWallet('100.00'); const bet = tx(w, 'BET', '10.00'); await send(bet);
+      step('REFUND de 50.00'); const valor = await send(tx(w, 'REFUND', '50.00', { ref: bet.externalTransactionId }));
+      step('REFUND de outra rodada'); const rodada = await send(tx(w, 'REFUND', '10.00', { ref: bet.externalTransactionId, round: 'outra' }));
+      return { wallet: w, checks: [check('valor errado', 'AMOUNT_MISMATCH', valor.body.failureCode), check('rodada errada', 'REFERENCE_MISMATCH', rodada.body.failureCode), check('saldo (nada devolvido)', '90.00', await balance(w))] };
+    }},
+  { t: 'Fora de ordem', d: 'REFUND chega ANTES da BET',
+    risco: 'Rede at-least-once: a devolução pode chegar antes da aposta. Recusar perderia o REFUND; aplicar devolveria dinheiro de uma aposta que nem existe.',
+    defesa: [
+      { camada: 'Estado PENDING_REFERENCE', como: 'sem a referência, a transação fica pendente (202), sem efeito no saldo e sem lançamento.', onde: 'src/wagering/domain/wager-transaction.ts · ' + UC },
+      { camada: 'Worker', como: 'um worker periódico reprocessa as pendentes com backoff exponencial (FOR UPDATE SKIP LOCKED para várias instâncias não pegarem a mesma). Quando a BET chega, aplica o REFUND.', onde: 'src/wagering/application/pending-reference.processor.ts' },
+    ],
+    fn: async () => {
+      step('criar wallet com 100.00'); const w = await createWallet('100.00'); const ext = 'ext-' + uid().slice(0, 8);
+      step('REFUND de uma BET que ainda não existe'); const refund = await send(tx(w, 'REFUND', '10.00', { ref: ext })); const meio = await balance(w);
+      step('a BET chega depois'); const bet = await send(tx(w, 'BET', '10.00', { ext }));
+      step('consultando o REFUND até o worker concluir');
+      const done = await waitFor(async () => { const r = await api('GET', '/wagering/transactions/' + refund.body.transactionId, undefined, {}, { silent: true }); return r.body.status === 'PROCESSED' ? r.body : null; });
+      if (done) trace.push({ group: 'consultando o REFUND até o worker concluir', method: 'GET', path: '/wagering/transactions/' + refund.body.transactionId, status: 200, ms: 0, response: done });
+      return { wallet: w, checks: [check('REFUND → 202 (pendente)', 202, refund.status), check('status inicial', 'PENDING_REFERENCE', refund.body.status),
+        check('saldo não mexeu enquanto pendente', '100.00', meio), check('BET → 201', 201, bet.status), check('worker concluiu o REFUND', 'PROCESSED', done?.status ?? 'timeout'),
+        check('saldo final', '100.00', await balance(w))] };
+    }},
+];
+
+const INFRA = [
+  { t: 'Banco cai no meio', d: 'para o Postgres, tenta apostar, sobe e reenvia',
+    risco: 'O banco some no meio da operação. Não pode gravar pela metade, e o provedor precisa saber que pode tentar de novo.',
+    defesa: [
+      { camada: 'Transação', como: 'sem commit, nada é gravado: saldo, extrato, transação e outbox entram ou saem juntos.', onde: 'src/persistence/database.service.ts' },
+      { camada: 'HTTP 503', como: 'falha transitória de infraestrutura vira <code>503</code> com <code>Retry-After</code>: "pode reenviar".', onde: 'src/http/http-exception.filter.ts · isTransientInfrastructureError' },
+      { camada: 'Idempotência', como: 'o reenvio com a mesma chave é seguro: processa uma vez só.', onde: UC },
+    ],
+    fn: async () => {
+      step('criar wallet com 100.00'); const w = await createWallet('100.00'); const p = tx(w, 'BET', '10.00');
+      step('derrubar o Postgres'); await ops('postgres-stop');
+      step('apostar com o banco fora'); const down = await send(p);
+      step('subir o Postgres'); await ops('postgres-start');
+      const ready = await waitFor(async () => (await api('GET', '/health/ready', undefined, {}, { silent: true })).status === 200, 30000, 1000);
+      step('reenviar a mesma aposta'); const retry = await send(p);
+      return { wallet: w, checks: [check('com banco fora → 503', 503, down.status), check('voltou a ficar ready', true, !!ready),
+        check('reenvio funciona', true, [200, 201].includes(retry.status)), check('debitou uma vez', '90.00', await balance(w))] };
+    }},
+  { t: 'Aposta pela fila', d: 'manda pela SQS, depois a MESMA mensagem de novo',
+    risco: 'A SQS entrega "pelo menos uma vez": a mesma mensagem pode chegar duas vezes, por exemplo se o worker morrer depois do commit e antes do ack.',
+    defesa: [
+      { camada: 'Mesmo caso de uso do HTTP', como: 'o consumer chama o mesmo use case: mesmas regras, mesmo lock, mesma idempotência.', onde: 'src/messaging/sqs-consumer.ts' },
+      { camada: 'Inbox', como: 'o <code>messageId</code> é gravado na MESMA transação do débito. Reentrega → "já vi" → descarta.', onde: 'src/persistence/inbox.repository.ts · ' + UC },
+      { camada: 'Ack depois do commit', como: 'a mensagem só é apagada da fila depois que o banco confirmou.', onde: 'src/messaging/sqs-consumer.ts' },
+    ],
+    fn: async () => {
+      step('criar wallet com 100.00'); const w = await createWallet('100.00'); const p = tx(w, 'BET', '10.00');
+      const envelope = { messageId: 'msg-' + uid().slice(0, 8), type: 'WagerTransactionRequested', occurredAt: new Date().toISOString(), data: { ...p, idempotencyKey: `${p.providerId}:${p.externalTransactionId}` } };
+      step('publicar a mensagem na fila'); const s1 = await ops('queue-send', { envelope, groupId: w.id, dedupId: uid() });
+      const first = await waitFor(async () => (await balance(w)) === '90.00', 20000);
+      step('publicar a MESMA mensagem de novo'); const s2 = await ops('queue-send', { envelope, groupId: w.id, dedupId: uid() }); await sleep(5000);
+      return { wallet: w, checks: [check('mensagem 1 enviada', 0, s1.code), check('fila processou (saldo 90)', true, !!first), check('duplicata enviada', 0, s2.code), check('duplicata não debitou', '90.00', await balance(w))] };
+    }},
+  { t: 'Lixo na fila', d: 'mensagem inválida deve ir para a DLQ sem travar a fila',
+    risco: 'Uma mensagem malformada que nunca vai passar. Se o consumer ficar tentando para sempre, trava as mensagens boas atrás dela (fila FIFO, mesmo grupo).',
+    defesa: [
+      { camada: 'Classificação de erro', como: 'envelope inválido é erro PERMANENTE: não adianta tentar de novo.', onde: 'src/messaging/sqs-consumer.ts' },
+      { camada: 'DLQ', como: 'a mensagem vai para <code>wager-transactions-dlq.fifo</code> e a fila segue.', onde: 'scripts/create-queues.ts · RedrivePolicy' },
+    ],
+    note: 'Confira a DLQ: <code>docker compose exec ministack awslocal sqs receive-message --queue-url http://localhost:4566/000000000000/wager-transactions-dlq.fifo</code>',
+    fn: async () => {
+      step('criar wallet com 100.00'); const w = await createWallet('100.00');
+      step('publicar lixo (sem idempotencyKey, sem campos)'); await ops('queue-send', { envelope: { messageId: 'msg-' + uid().slice(0, 8), type: 'WagerTransactionRequested', data: { kind: 'BET' } }, groupId: w.id, dedupId: uid() });
+      const p = tx(w, 'BET', '10.00');
+      step('publicar uma aposta válida logo atrás'); await ops('queue-send', { envelope: { messageId: 'msg-' + uid().slice(0, 8), type: 'WagerTransactionRequested', occurredAt: new Date().toISOString(), data: { ...p, idempotencyKey: `${p.providerId}:${p.externalTransactionId}` } }, groupId: w.id, dedupId: uid() });
+      const ok = await waitFor(async () => (await balance(w)) === '90.00', 30000);
+      return { wallet: w, checks: [check('a mensagem boa passou depois do lixo', true, !!ok)] };
+    }},
+];
+
+// ================= UI =================
+function render(list, el) {
+  document.getElementById(el).innerHTML = list.map((s, i) => `<div class="scn"><div>${s.t}<small>${s.d}</small></div><button onclick="runOne('${el}', ${i})">atacar</button></div>`).join('');
+}
+async function runOne(el, i) {
+  const sc = (el === 'list-app' ? APP : INFRA)[i];
+  trace = []; currentGroup = null;
+  let res, snap = null, err = null;
+  try {
+    res = await sc.fn();
+    if (res.wallet) { snap = await snapshot(res.wallet); res.checks.push(check('invariante: saldo == soma do extrato', true, snap.recon.consistent)); }
+  } catch (e) { err = String(e.message ?? e); }
+  report(sc, res?.checks ?? [], snap, err);
+}
+async function runAll() { for (let i = APP.length - 1; i >= 0; i--) await runOne('list-app', i); }
+function clearOut() { totals = { pass: 0, fail: 0 }; document.getElementById('summary').textContent = ''; document.getElementById('out').innerHTML = '<div class="card"><code>Limpo.</code></div>'; }
+async function checkHealth() {
+  const r = await api('GET', '/health/ready', undefined, {}, { silent: true }); const el = document.getElementById('health');
+  el.textContent = 'health: ' + (r.status === 200 ? 'ready' : `${r.status} ${JSON.stringify(r.body.checks ?? r.body)}`);
+  el.className = 'badge ' + (r.status === 200 ? 'ok' : 'bad');
+}
+render(APP, 'list-app'); render(INFRA, 'list-infra'); checkHealth();
+</script>
+</body>
+</html>

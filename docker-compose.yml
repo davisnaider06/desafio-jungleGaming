@@ -9,6 +9,12 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wagering -d wagering"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
 
   ministack:
     image: ministackorg/ministack:latest
@@ -16,6 +22,16 @@ services:
       SERVICES: sqs
     ports:
       - "4566:4566"
+    # A imagem já traz um healthcheck (a cada 10 s). Este o repete com intervalo curto
+    # para o `docker compose up -d --wait` não esperar à toa.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request as r; r.urlopen('http://localhost:4566/_ministack/health')"
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
 
 volumes:
   pgdata:

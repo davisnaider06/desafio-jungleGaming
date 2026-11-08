@@ -74,6 +74,62 @@ export async function ensureQueues(
   };
 }
 
+export interface WaitForSqsOptions {
+  /** Tempo total máximo de espera. */
+  timeoutMs?: number;
+  /** Primeira espera entre tentativas; dobra até `maxDelayMs`. */
+  initialDelayMs?: number;
+  maxDelayMs?: number;
+  /** Chamado a cada tentativa que falha (para o script mostrar progresso). */
+  onRetry?: (info: {
+    attempt: number;
+    delayMs: number;
+    error: unknown;
+  }) => void;
+}
+
+/**
+ * Espera o SQS responder (ListQueues) com retry e backoff. Resolve o caso de rodar
+ * `docker compose up` e `queues:create` em sequência rápida: o contêiner já "subiu",
+ * mas o SQS ainda não aceita conexões ("socket hang up").
+ */
+export async function waitForSqs(
+  client: SQSClient,
+  options: WaitForSqsOptions = {},
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? 30_000;
+  const maxDelayMs = options.maxDelayMs ?? 2_000;
+  let delayMs = options.initialDelayMs ?? 250;
+  const deadline = Date.now() + timeoutMs;
+  let attempt = 0;
+
+  for (;;) {
+    attempt += 1;
+    try {
+      await client.send(new ListQueuesCommand({ MaxResults: 1 }));
+      return;
+    } catch (error) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        const code = (error as { code?: unknown } | null)?.code;
+        const reason =
+          error instanceof Error
+            ? error.message || String(code ?? error.name)
+            : String(error);
+        throw new Error(
+          `SQS não ficou disponível em ${Math.round(timeoutMs / 1000)}s ` +
+            `(${attempt} tentativas; último erro: ${reason}). ` +
+            `Confira se o MiniStack está de pé: docker compose up -d --wait`,
+        );
+      }
+      const wait = Math.min(delayMs, remaining);
+      options.onRetry?.({ attempt, delayMs: wait, error });
+      await new Promise((resolve) => setTimeout(resolve, wait));
+      delayMs = Math.min(delayMs * 2, maxDelayMs);
+    }
+  }
+}
+
 @Injectable()
 export class SqsService {
   readonly client: SQSClient;

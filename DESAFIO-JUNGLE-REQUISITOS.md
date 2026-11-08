@@ -44,7 +44,7 @@ serão **discutidas na apresentação**.
 
 Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-least-once**. Assumir que:
 - [x] a mesma operação pode chegar várias vezes
-- [ ] uma operação dependente pode chegar **antes** da referenciada
+- [x] uma operação dependente pode chegar **antes** da referenciada
 - [x] várias instâncias podem tocar a mesma wallet ao mesmo tempo
 - [x] o processo pode morrer **antes ou depois** do commit
 - [x] eventos podem ser publicados mais de uma vez
@@ -167,22 +167,22 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 | ROLLBACK | inverso da referência | 1 invertida | reverte transação `PROCESSED`, uma única vez |
 
 - [x] [P1] BET, WIN, LOSS
-- [ ] [P3] REFUND, ROLLBACK
-- [ ] 1. REFUND e ROLLBACK exigem `referenceExternalTransactionId`
-- [ ] 2. Referência resolvida por `(providerId, referenceExternalTransactionId)` e precisa ser do **mesmo provider, player, wallet, moeda e rodada**
-- [ ] 3. REFUND só referencia BET. ROLLBACK referencia BET, WIN ou REFUND
-- [ ] 4. Uma referência não pode ser revertida duas vezes pelo mesmo tipo de operação (constraint no banco)
-- [ ] 5. Valor de REFUND/ROLLBACK **igual** ao da referência (parcial fora de escopo)
+- [x] [P3] REFUND, ROLLBACK
+- [x] 1. REFUND e ROLLBACK exigem `referenceExternalTransactionId`
+- [x] 2. Referência resolvida por `(providerId, referenceExternalTransactionId)` e precisa ser do **mesmo provider, player, wallet, moeda e rodada**
+- [x] 3. REFUND só referencia BET. ROLLBACK referencia BET, WIN ou REFUND
+- [x] 4. Uma referência não pode ser revertida duas vezes pelo mesmo tipo de operação (constraint no banco)
+- [x] 5. Valor de REFUND/ROLLBACK **igual** ao da referência (parcial fora de escopo)
 - [x] 6. `REJECTED` não altera saldo nem gera ledger
 - [x] 7. Repetir operação já processada retorna **o resultado original, incluindo o saldo daquele momento**
-- [ ] 8. Referência ausente → `PENDING_REFERENCE` e reprocessar depois
-- [ ] 9. Reversão que deixaria saldo negativo → **rejeitada explicitamente** com `failureCode` **diferente** do de BET sem saldo, auditável
+- [x] 8. Referência ausente → `PENDING_REFERENCE` e reprocessar depois
+- [x] 9. Reversão que deixaria saldo negativo → **rejeitada explicitamente** com `failureCode` **diferente** do de BET sem saldo, auditável
 - [ ] Documentar qualquer interpretação adicional
 
 ### 6.1 Fora de ordem [P3]
-- [ ] Worker agendado reprocessa `PENDING_REFERENCE` com **backoff exponencial**
-- [ ] Limite de tentativas ou TTL **definido e justificado**
-- [ ] Esgotou → `REJECTED` com `failureCode` de referência inexistente + **evento publicado**
+- [x] Worker agendado reprocessa `PENDING_REFERENCE` com **backoff exponencial**
+- [x] Limite de tentativas ou TTL **definido e justificado**
+- [x] Esgotou → `REJECTED` com `failureCode` de referência inexistente + **evento publicado**
 
 ### 6.2 Códigos de falha [P1]
 - [x] Toda rejeição tem `failureCode` estável e legível por máquina
@@ -236,8 +236,8 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
   - [x] payload inválido (sugestão 400/422)
   - [x] conflito de idempotência (409)
   - [x] rejeição por regra de negócio (sugestão 422, ou 200 com `status: REJECTED` — decidir e documentar)
-  - [ ] aceite com processamento pendente (202)
-  - [ ] falha transitória de infraestrutura (503)
+  - [x] aceite com processamento pendente (202)
+  - [x] falha transitória de infraestrutura (503)
 - [ ] Documentar a tabela no ARCHITECTURE.md
 
 ### Reconciliação
@@ -276,7 +276,7 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
   - [x] `WagerTransactionProcessed` — qualquer aplicada, **inclusive LOSS**
   - [x] `WagerTransactionRejected` — rejeitada por regra de negócio
   - [x] `WalletBalanceChanged` — **somente** quando o saldo muda
-  - [ ] `WagerTransactionPendingReference` — referência ausente
+  - [x] `WagerTransactionPendingReference` — referência ausente
 - Envelope:
   - [x] `abstract class IntegrationEvent<T>` com `abstract eventType`, `abstract version`, `eventId`, `aggregateId`, `correlationId`, `causationId?`, `occurredAt`, `data: Readonly<T>`, construtor `protected`
   - [x] `toJSON()` → `{ eventId, eventType, aggregateId, correlationId, causationId?, occurredAt (ISO-8601), version, data }`
@@ -320,7 +320,7 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 - [x] 4. **≥ 3 processos/instâncias** simultâneos
 - [x] 5. worker morto **depois do commit e antes do ack**
 - [x] 6. dois publishers na mesma outbox
-- [ ] 7. ROLLBACK ou REFUND entregue antes da referência
+- [x] 7. ROLLBACK ou REFUND entregue antes da referência
 - [x] 8. reinício do serviço com consistência final comprovada
 
 - [x] **Invariante final em todos os testes:** `wallet.balance == saldo reconstruído pelo ledger`

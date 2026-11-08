@@ -117,7 +117,7 @@ comando); o servidor do painel escuta só em `127.0.0.1`.
 
 ### O que ela encontrou
 
-Com os 152 testes automatizados passando, a Prova de Fogo ainda achou **três problemas reais**,
+Com os 185 testes automatizados passando, a Prova de Fogo ainda achou **três problemas reais**,
 corrigidos e registrados no ARCHITECTURE.md (§11):
 
 - **Setup quebrava em sequência rápida:** `queues:create` falhava com `socket hang up` porque o
@@ -136,7 +136,14 @@ Detalhes em [tools/prova-de-fogo/README.md](tools/prova-de-fogo/README.md).
 
 ## API
 
-> No PowerShell, use `curl.exe` (o `curl` puro é um apelido do `Invoke-WebRequest`).
+> Os exemplos abaixo são para **bash** (Linux, macOS, Git Bash). No PowerShell, o `curl` puro é um
+> apelido do `Invoke-WebRequest` e as aspas simples do JSON não funcionam: use `curl.exe` com o JSON
+> entre aspas duplas (escapando as internas) ou `Invoke-RestMethod`, por exemplo:
+>
+> ```powershell
+> Invoke-RestMethod -Method Post http://localhost:3000/wallets -ContentType 'application/json' `
+>   -Body '{"playerId":"p1","initialBalance":{"amount":"100.00","currency":"BRL"}}'
+> ```
 
 ```bash
 # criar wallet

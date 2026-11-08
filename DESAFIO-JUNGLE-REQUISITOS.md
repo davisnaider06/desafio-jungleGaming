@@ -29,14 +29,14 @@ serão **discutidas na apresentação**.
 
 ## 1. Autenticação (seção 2) — vale 0 pontos
 
-- [ ] **Decisão:** não implementar (recomendado pelo prazo).
-- [ ] Se NÃO implementar:
-  - [ ] documentar a decisão no `ARCHITECTURE.md`
-  - [ ] descrever o desenho que adotaria (IdP externo, ex.: Keycloak ou Zitadel, OIDC)
-  - [ ] deixar ponto de extensão explícito no código (ex.: `AuthGuard` no-op ou `ProviderIdentityPort`)
+- [x] **Decisão:** não implementar (recomendado pelo prazo).
+- [x] Se NÃO implementar:
+  - [x] documentar a decisão no `ARCHITECTURE.md`
+  - [x] descrever o desenho que adotaria (IdP externo, ex.: Keycloak ou Zitadel, OIDC)
+  - [x] deixar ponto de extensão explícito no código (ex.: `AuthGuard` no-op ou `ProviderIdentityPort`)
 - [ ] Se implementar: **IdP externo** (Keycloak/Zitadel ou equivalente). **Proibido** tabela própria de usuários com hash de senha.
-- [ ] Endpoints de health ficam **abertos**.
-- [ ] Mensagens da fila = canal interno confiável, **mas** o `providerId` dentro da mensagem passa pelas mesmas validações de domínio.
+- [x] Endpoints de health ficam **abertos**.
+- [x] Mensagens da fila = canal interno confiável, **mas** o `providerId` dentro da mensagem passa pelas mesmas validações de domínio.
 
 ---
 
@@ -67,7 +67,7 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 | Migrations | **versionadas e reversíveis** (up e down) |
 
 - [x] ORM: **MikroORM** (preferido: Unit of Work, Identity Map, `em.transactional()`, `LockMode`). TypeORM aceito. **Prisma proibido.**
-- [ ] Justificar no `ARCHITECTURE.md`: escolha do ORM, **mapeamento do `Money`** e **estratégia transacional**.
+- [x] Justificar no `ARCHITECTURE.md`: escolha do ORM, **mapeamento do `Money`** e **estratégia transacional**.
 
 ---
 
@@ -135,7 +135,7 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 - [x] Transição a partir de estado terminal → lança `InvalidTransactionStateError` (erro de programação)
 - [x] Consultas: `isTerminal()` · `affectsBalance()` (false para LOSS) · `requiresReference()` (REFUND e ROLLBACK) · `matchesPayload(hash)` · `ledgerDirectionFor(reference?)`
 - [x] `PROCESSED`, `REJECTED`, `FAILED` são **terminais**
-- [ ] **Definir e documentar** as transições válidas (diagrama de estados no ARCHITECTURE.md)
+- [x] **Definir e documentar** as transições válidas (diagrama de estados no ARCHITECTURE.md)
 - [x] `OPENING` **não pode** ser submetido pela API nem pela fila
 - [x] Mesma idempotency key + payload diferente = **conflito**, não replay
 
@@ -177,7 +177,7 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 - [x] 7. Repetir operação já processada retorna **o resultado original, incluindo o saldo daquele momento**
 - [x] 8. Referência ausente → `PENDING_REFERENCE` e reprocessar depois
 - [x] 9. Reversão que deixaria saldo negativo → **rejeitada explicitamente** com `failureCode` **diferente** do de BET sem saldo, auditável
-- [ ] Documentar qualquer interpretação adicional
+- [x] Documentar qualquer interpretação adicional
 
 ### 6.1 Fora de ordem [P3]
 - [x] Worker agendado reprocessa `PENDING_REFERENCE` com **backoff exponencial**
@@ -186,7 +186,7 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 
 ### 6.2 Códigos de falha [P1]
 - [x] Toda rejeição tem `failureCode` estável e legível por máquina
-- [ ] Taxonomia própria, **documentada**, suficiente para o provedor decidir: reenviar, corrigir payload ou desistir
+- [x] Taxonomia própria, **documentada**, suficiente para o provedor decidir: reenviar, corrigir payload ou desistir
 - Sugestão: `INSUFFICIENT_FUNDS`, `REVERSAL_WOULD_OVERDRAW`, `CURRENCY_MISMATCH`, `WALLET_NOT_FOUND`, `REFERENCE_NOT_FOUND`, `REFERENCE_MISMATCH`, `REFERENCE_ALREADY_REVERSED`, `AMOUNT_MISMATCH`, `INVALID_REFERENCE_KIND`, `IDEMPOTENCY_CONFLICT`, `INVALID_PAYLOAD`
 
 ---
@@ -194,8 +194,8 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 ## 7. Concorrência (seção 8) [P1][E]
 
 - [x] Unidade de concorrência = `walletId`
-- [ ] Correto quando: duas apostas disputam o mesmo saldo · vários workers na mesma wallet · wallets diferentes em paralelo · **3+ instâncias**
-- [ ] Estratégia escolhida e **justificada** (pessimista, otimista com retry limitado, update atômico condicionado ou combinação)
+- [x] Correto quando: duas apostas disputam o mesmo saldo · vários workers na mesma wallet · wallets diferentes em paralelo · **3+ instâncias**
+- [x] Estratégia escolhida e **justificada** (pessimista, otimista com retry limitado, update atômico condicionado ou combinação)
 - [x] Recursos do broker (FIFO, dedup) = otimização; **o banco garante as invariantes**
 - [x] **Cenário obrigatório:** saldo 100.00, duas BETs de 80.00 simultâneas →
   - [x] exatamente uma `PROCESSED`
@@ -232,13 +232,13 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
   - [x] mesma key + payload diferente → **conflito**, não replay
 
 ### Status HTTP
-- [ ] Mapeamento seu, mas **consistente em todos os endpoints**, distinguindo:
+- [x] Mapeamento seu, mas **consistente em todos os endpoints**, distinguindo:
   - [x] payload inválido (sugestão 400/422)
   - [x] conflito de idempotência (409)
   - [x] rejeição por regra de negócio (sugestão 422, ou 200 com `status: REJECTED` — decidir e documentar)
   - [x] aceite com processamento pendente (202)
   - [x] falha transitória de infraestrutura (503)
-- [ ] Documentar a tabela no ARCHITECTURE.md
+- [x] Documentar a tabela no ARCHITECTURE.md
 
 ### Reconciliação
 - [x] `POST /wallets/:walletId/reconciliation`
@@ -358,26 +358,26 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 ## 14. Entregáveis
 
 ### `README.md`
-- [ ] Pré-requisitos (Bun, Docker)
-- [ ] Como subir (`docker compose up -d`, migrations, `bun run start`)
-- [ ] Como rodar cada suíte de teste
-- [ ] Exemplos de chamadas (curl)
+- [x] Pré-requisitos (Bun, Docker)
+- [x] Como subir (`docker compose up -d`, migrations, `bun run start`)
+- [x] Como rodar cada suíte de teste
+- [x] Exemplos de chamadas (curl)
 
 ### `ARCHITECTURE.md` — tudo que o README oficial manda justificar
-- [ ] Escolha do ORM
-- [ ] Mapeamento do `Money` na persistência
-- [ ] Estratégia transacional
-- [ ] Estratégia de concorrência e por quê
-- [ ] Decisão sobre autenticação + desenho alternativo + ponto de extensão
-- [ ] Diagrama/tabela de transições de status da `WagerTransaction`
-- [ ] Taxonomia de `failureCode`
-- [ ] Algoritmo do `payloadHash`
-- [ ] Limite/TTL do `PENDING_REFERENCE` e justificativa
-- [ ] Mapeamento de status HTTP
-- [ ] Schema: constraints e índices e o que cada um garante
-- [ ] Interpretações adicionais das regras
-- [ ] Trade-offs e **limitações conhecidas** (o que não deu tempo e como faria)
-- [ ] Uso de IA no desenvolvimento e como o código foi validado (a vaga cita isso)
+- [x] Escolha do ORM
+- [x] Mapeamento do `Money` na persistência
+- [x] Estratégia transacional
+- [x] Estratégia de concorrência e por quê
+- [x] Decisão sobre autenticação + desenho alternativo + ponto de extensão
+- [x] Diagrama/tabela de transições de status da `WagerTransaction`
+- [x] Taxonomia de `failureCode`
+- [x] Algoritmo do `payloadHash`
+- [x] Limite/TTL do `PENDING_REFERENCE` e justificativa
+- [x] Mapeamento de status HTTP
+- [x] Schema: constraints e índices e o que cada um garante
+- [x] Interpretações adicionais das regras
+- [x] Trade-offs e **limitações conhecidas** (o que não deu tempo e como faria)
+- [x] Uso de IA no desenvolvimento e como o código foi validado (a vaga cita isso)
 
 ---
 

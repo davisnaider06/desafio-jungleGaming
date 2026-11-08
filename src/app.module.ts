@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { AuthGuard } from './http/auth.guard';
 import { MikroOrmModule } from '@mikro-orm/nestjs';
 import { loadConfig } from './config';
 import { AllExceptionsFilter } from './http/http-exception.filter';
@@ -38,6 +39,7 @@ import { WorkersLifecycle } from './workers/workers';
   providers: [
     { provide: APP_CONFIG, useFactory: loadConfig },
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
+    { provide: APP_GUARD, useClass: AuthGuard },
     Database,
     WalletRepository,
     LedgerRepository,

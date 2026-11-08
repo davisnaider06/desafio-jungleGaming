@@ -56,7 +56,9 @@ export class Money {
 
   private static assertCurrency(currency: unknown): asserts currency is string {
     if (typeof currency !== 'string' || !CURRENCY.test(currency)) {
-      throw new InvalidMoneyError(`invalid currency: ${JSON.stringify(currency)}`);
+      throw new InvalidMoneyError(
+        `invalid currency: ${JSON.stringify(currency)}`,
+      );
     }
   }
 
@@ -110,7 +112,9 @@ export class Money {
 
   private assertSameCurrency(other: Money): void {
     if (this.currency !== other.currency) {
-      throw new CurrencyMismatchError(`currency mismatch: ${this.currency} vs ${other.currency}`);
+      throw new CurrencyMismatchError(
+        `currency mismatch: ${this.currency} vs ${other.currency}`,
+      );
     }
   }
 }

@@ -1,16 +1,25 @@
 import { defineConfig } from '@mikro-orm/postgresql';
 import { Migrator } from '@mikro-orm/migrations';
+import { loadConfig } from './config';
+import { ALL_SCHEMAS } from './persistence/schemas';
+
+const { db } = loadConfig();
 
 export default defineConfig({
-host: 'localhost',
-port: 5432,
-user: 'wagering',
-password: 'wagering',
-dbName: 'wagering',
-entities: ['dist/**/*.entity.js'],
-entitiesTs: ['src/**/*.entity.ts'],
-discovery: { warnWhenNoEntities: false },
-extensions: [Migrator],
-migrations: { path: 'dist/migrations', pathTs: 'src/migrations' },
-debug: true,
+  host: db.host,
+  port: db.port,
+  user: db.user,
+  password: db.password,
+  dbName: db.name,
+  entities: ALL_SCHEMAS,
+  extensions: [Migrator],
+  migrations: {
+    path: 'src/migrations',
+    pathTs: 'src/migrations',
+    // Migrations geradas já com up e down.
+    snapshot: true,
+    transactional: true,
+  },
+  forceUtcTimezone: true,
+  debug: process.env.MIKRO_ORM_DEBUG === 'true',
 });

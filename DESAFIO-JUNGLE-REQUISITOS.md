@@ -66,87 +66,87 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 | Orquestração local | Docker Compose |
 | Migrations | **versionadas e reversíveis** (up e down) |
 
-- [ ] ORM: **MikroORM** (preferido: Unit of Work, Identity Map, `em.transactional()`, `LockMode`). TypeORM aceito. **Prisma proibido.**
+- [x] ORM: **MikroORM** (preferido: Unit of Work, Identity Map, `em.transactional()`, `LockMode`). TypeORM aceito. **Prisma proibido.**
 - [ ] Justificar no `ARCHITECTURE.md`: escolha do ORM, **mapeamento do `Money`** e **estratégia transacional**.
 
 ---
 
 ## 4. Restrições invioláveis (seção 5)
 
-- [ ] [E] 1. Nada de `number`, `float` ou `double` para dinheiro.
-- [ ] [E] 2. Nada de cache em memória como garantia de idempotência.
-- [ ] 3. Não confiar só no SQS FIFO para consistência.
+- [x] [E] 1. Nada de `number`, `float` ou `double` para dinheiro.
+- [x] [E] 2. Nada de cache em memória como garantia de idempotência.
+- [x] 3. Não confiar só no SQS FIFO para consistência.
 - [ ] [E] 4. Não publicar evento antes do commit da transação financeira.
-- [ ] 5. Não sobrescrever nem excluir lançamentos do ledger.
-- [ ] 6. Não usar lock global compartilhado por todas as wallets.
-- [ ] 7. Não fazer saldo como `read → calculate → update` sem controle de concorrência.
+- [x] 5. Não sobrescrever nem excluir lançamentos do ledger.
+- [x] 6. Não usar lock global compartilhado por todas as wallets.
+- [x] 7. Não fazer saldo como `read → calculate → update` sem controle de concorrência.
 - [ ] [E] 8. Correto com **múltiplas instâncias**.
-- [ ] 9. Unicidade, imutabilidade e não-negatividade garantidas **no schema do banco** (constraints, índices). O desenho do schema é avaliado.
+- [x] 9. Unicidade, imutabilidade e não-negatividade garantidas **no schema do banco** (constraints, índices). O desenho do schema é avaliado.
 
 ---
 
 ## 5. Modelo de domínio (seção 6)
 
 ### 5.0 Regra de modelagem (todas as classes de domínio)
-- [ ] Construtor `private` ou `protected` + factories estáticas (`create`, `from`, `rehydrate`).
-- [ ] `rehydrate` reconstrói do banco **sem revalidar** regras de transição.
-- [ ] Estado encapsulado, transições explícitas. Nomes podem mudar se as garantias forem preservadas.
+- [x] Construtor `private` ou `protected` + factories estáticas (`create`, `from`, `rehydrate`).
+- [x] `rehydrate` reconstrói do banco **sem revalidar** regras de transição.
+- [x] Estado encapsulado, transições explícitas. Nomes podem mudar se as garantias forem preservadas.
 
 ### 5.1 `Money` [P1][E]
-- [ ] `interface MoneyProps { amount: string; currency: string }` (DTO)
-- [ ] Construtor privado com `Decimal` + `currency`
-- [ ] `static from(props: MoneyProps)` · `static zero(currency)`
-- [ ] `add` · `subtract` · `negate`
-- [ ] `isZero` · `isPositive` · `isNegative` · `isLessThan` · `equals`
-- [ ] `toJSON(): MoneyProps` · `toString()`
-- [ ] `private assertSameCurrency(other)`
-- [ ] **Imutável**: toda operação retorna instância nova.
-- [ ] `amount` recebido e serializado como **string decimal com escala fixa de 2 casas**.
-- [ ] Moedas diferentes → **erro de domínio**.
-- [ ] Rejeitar entrada: `NaN`, `Infinity`, notação científica, string vazia, **mais de 2 casas**, **negativo em contrato de entrada**.
-- [ ] Domínio **não depende** de tipos do ORM nem de decorators do Nest.
-- [ ] Persistência: valor e moeda podem ser colunas separadas, desde que exato e reidratado como `Money`.
-- [ ] Pode assumir só `BRL`, **mas** o modelo continua multimoeda e **conflito de moeda é testado**.
-- [ ] Formato nos contratos: `{ "amount": "25.00", "currency": "BRL" }`
+- [x] `interface MoneyProps { amount: string; currency: string }` (DTO)
+- [x] Construtor privado com `Decimal` + `currency`
+- [x] `static from(props: MoneyProps)` · `static zero(currency)`
+- [x] `add` · `subtract` · `negate`
+- [x] `isZero` · `isPositive` · `isNegative` · `isLessThan` · `equals`
+- [x] `toJSON(): MoneyProps` · `toString()`
+- [x] `private assertSameCurrency(other)`
+- [x] **Imutável**: toda operação retorna instância nova.
+- [x] `amount` recebido e serializado como **string decimal com escala fixa de 2 casas**.
+- [x] Moedas diferentes → **erro de domínio**.
+- [x] Rejeitar entrada: `NaN`, `Infinity`, notação científica, string vazia, **mais de 2 casas**, **negativo em contrato de entrada**.
+- [x] Domínio **não depende** de tipos do ORM nem de decorators do Nest.
+- [x] Persistência: valor e moeda podem ser colunas separadas, desde que exato e reidratado como `Money`.
+- [x] Pode assumir só `BRL`, **mas** o modelo continua multimoeda e **conflito de moeda é testado**.
+- [x] Formato nos contratos: `{ "amount": "25.00", "currency": "BRL" }`
 
 ### 5.2 `Wallet` (Aggregate Root) [P1]
-- [ ] Campos: `id`, `playerId`, `currency`, `_balance: Money`, `_version: number`, `createdAt`, `_updatedAt`
-- [ ] `static open({ id, playerId, initialBalance })` · `static rehydrate(state)`
-- [ ] getters `balance`, `version`, `updatedAt`
-- [ ] `debit(...)` e `credit(...)` mantendo saldo e ledger consistentes (assinatura/retorno à sua escolha)
-- [ ] `private assertSameCurrency`
+- [x] Campos: `id`, `playerId`, `currency`, `_balance: Money`, `_version: number`, `createdAt`, `_updatedAt`
+- [x] `static open({ id, playerId, initialBalance })` · `static rehydrate(state)`
+- [x] getters `balance`, `version`, `updatedAt`
+- [x] `debit(...)` e `credit(...)` mantendo saldo e ledger consistentes (assinatura/retorno à sua escolha)
+- [x] `private assertSameCurrency`
 - Invariantes:
-  - [ ] no máximo **uma wallet por `playerId` + `currency`** (unique no banco)
-  - [ ] saldo nunca negativo (check no banco)
-  - [ ] **toda alteração de saldo tem lançamento no ledger e vice-versa**
-  - [ ] concorrência não causa lost update
-  - [ ] moeda da operação = moeda da wallet
-  - [ ] `version` começa em **1** após criar e **só incrementa quando o saldo muda**
-- [ ] `version` sugerido para optimistic lock; outra estratégia ok se justificada.
+  - [x] no máximo **uma wallet por `playerId` + `currency`** (unique no banco)
+  - [x] saldo nunca negativo (check no banco)
+  - [x] **toda alteração de saldo tem lançamento no ledger e vice-versa**
+  - [x] concorrência não causa lost update
+  - [x] moeda da operação = moeda da wallet
+  - [x] `version` começa em **1** após criar e **só incrementa quando o saldo muda**
+- [x] `version` sugerido para optimistic lock; outra estratégia ok se justificada.
 
 ### 5.3 `WagerTransaction` [P1]
-- [ ] `enum WagerTransactionKind`: `OPENING` (interno), `BET`, `WIN`, `LOSS`, `REFUND`, `ROLLBACK`
-- [ ] `enum WagerTransactionStatus`: `PENDING`, `PENDING_REFERENCE`, `PROCESSED`, `REJECTED`, `FAILED`
-- [ ] Campos: `id`, `providerId`, `externalTransactionId`, `idempotencyKey`, `payloadHash`, `walletId`, `playerId`, `roundId`, `gameId`, `kind`, `money`, `referenceExternalTransactionId` (id do provedor), `createdAt`, `_status`, `_referenceTransactionId?`, `_failureCode?`, `_processedAt?`
-- [ ] `static create(props)` — nasce `PENDING`, valida exigência de referência por kind
-- [ ] `static rehydrate(state)`
-- [ ] getters `status`, `referenceTransactionId`, `failureCode`, `processedAt`
-- [ ] Transições: `markProcessed(referenceTransactionId, at)` · `markPendingReference()` · `reject(code)` · `fail(code)`
-- [ ] Transição a partir de estado terminal → lança `InvalidTransactionStateError` (erro de programação)
-- [ ] Consultas: `isTerminal()` · `affectsBalance()` (false para LOSS) · `requiresReference()` (REFUND e ROLLBACK) · `matchesPayload(hash)` · `ledgerDirectionFor(reference?)`
-- [ ] `PROCESSED`, `REJECTED`, `FAILED` são **terminais**
+- [x] `enum WagerTransactionKind`: `OPENING` (interno), `BET`, `WIN`, `LOSS`, `REFUND`, `ROLLBACK`
+- [x] `enum WagerTransactionStatus`: `PENDING`, `PENDING_REFERENCE`, `PROCESSED`, `REJECTED`, `FAILED`
+- [x] Campos: `id`, `providerId`, `externalTransactionId`, `idempotencyKey`, `payloadHash`, `walletId`, `playerId`, `roundId`, `gameId`, `kind`, `money`, `referenceExternalTransactionId` (id do provedor), `createdAt`, `_status`, `_referenceTransactionId?`, `_failureCode?`, `_processedAt?`
+- [x] `static create(props)` — nasce `PENDING`, valida exigência de referência por kind
+- [x] `static rehydrate(state)`
+- [x] getters `status`, `referenceTransactionId`, `failureCode`, `processedAt`
+- [x] Transições: `markProcessed(referenceTransactionId, at)` · `markPendingReference()` · `reject(code)` · `fail(code)`
+- [x] Transição a partir de estado terminal → lança `InvalidTransactionStateError` (erro de programação)
+- [x] Consultas: `isTerminal()` · `affectsBalance()` (false para LOSS) · `requiresReference()` (REFUND e ROLLBACK) · `matchesPayload(hash)` · `ledgerDirectionFor(reference?)`
+- [x] `PROCESSED`, `REJECTED`, `FAILED` são **terminais**
 - [ ] **Definir e documentar** as transições válidas (diagrama de estados no ARCHITECTURE.md)
-- [ ] `OPENING` **não pode** ser submetido pela API nem pela fila
-- [ ] Mesma idempotency key + payload diferente = **conflito**, não replay
+- [x] `OPENING` **não pode** ser submetido pela API nem pela fila
+- [x] Mesma idempotency key + payload diferente = **conflito**, não replay
 
 ### 5.4 `WalletLedgerEntry` (imutável) [P1][E]
-- [ ] `enum LedgerDirection { Debit = "DEBIT", Credit = "CREDIT" }`
-- [ ] Campos (todos readonly): `id`, `walletId`, `transactionId`, `direction`, `money`, `balanceBefore`, `balanceAfter`, `createdAt`
-- [ ] `static create(props)` valida a aritmética · `static rehydrate(state)`
-- [ ] `isBalanced()`: `balanceBefore ± money === balanceAfter`
-- [ ] **Sem campos mutáveis e sem métodos de transição**
-- [ ] No máximo **um lançamento por transação por wallet** (unique no banco)
-- [ ] `LOSS` e transação `REJECTED` **não geram** lançamento
+- [x] `enum LedgerDirection { Debit = "DEBIT", Credit = "CREDIT" }`
+- [x] Campos (todos readonly): `id`, `walletId`, `transactionId`, `direction`, `money`, `balanceBefore`, `balanceAfter`, `createdAt`
+- [x] `static create(props)` valida a aritmética · `static rehydrate(state)`
+- [x] `isBalanced()`: `balanceBefore ± money === balanceAfter`
+- [x] **Sem campos mutáveis e sem métodos de transição**
+- [x] No máximo **um lançamento por transação por wallet** (unique no banco)
+- [x] `LOSS` e transação `REJECTED` **não geram** lançamento
 - [ ] [OPC] partidas dobradas (double-entry)
 
 ### 5.5 Inbox e Outbox [P2]
@@ -166,15 +166,15 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 | REFUND | crédito | 1 CREDIT | reverte uma BET `PROCESSED`, uma única vez |
 | ROLLBACK | inverso da referência | 1 invertida | reverte transação `PROCESSED`, uma única vez |
 
-- [ ] [P1] BET, WIN, LOSS
+- [x] [P1] BET, WIN, LOSS
 - [ ] [P3] REFUND, ROLLBACK
 - [ ] 1. REFUND e ROLLBACK exigem `referenceExternalTransactionId`
 - [ ] 2. Referência resolvida por `(providerId, referenceExternalTransactionId)` e precisa ser do **mesmo provider, player, wallet, moeda e rodada**
 - [ ] 3. REFUND só referencia BET. ROLLBACK referencia BET, WIN ou REFUND
 - [ ] 4. Uma referência não pode ser revertida duas vezes pelo mesmo tipo de operação (constraint no banco)
 - [ ] 5. Valor de REFUND/ROLLBACK **igual** ao da referência (parcial fora de escopo)
-- [ ] 6. `REJECTED` não altera saldo nem gera ledger
-- [ ] 7. Repetir operação já processada retorna **o resultado original, incluindo o saldo daquele momento**
+- [x] 6. `REJECTED` não altera saldo nem gera ledger
+- [x] 7. Repetir operação já processada retorna **o resultado original, incluindo o saldo daquele momento**
 - [ ] 8. Referência ausente → `PENDING_REFERENCE` e reprocessar depois
 - [ ] 9. Reversão que deixaria saldo negativo → **rejeitada explicitamente** com `failureCode` **diferente** do de BET sem saldo, auditável
 - [ ] Documentar qualquer interpretação adicional
@@ -185,7 +185,7 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 - [ ] Esgotou → `REJECTED` com `failureCode` de referência inexistente + **evento publicado**
 
 ### 6.2 Códigos de falha [P1]
-- [ ] Toda rejeição tem `failureCode` estável e legível por máquina
+- [x] Toda rejeição tem `failureCode` estável e legível por máquina
 - [ ] Taxonomia própria, **documentada**, suficiente para o provedor decidir: reenviar, corrigir payload ou desistir
 - Sugestão: `INSUFFICIENT_FUNDS`, `REVERSAL_WOULD_OVERDRAW`, `CURRENCY_MISMATCH`, `WALLET_NOT_FOUND`, `REFERENCE_NOT_FOUND`, `REFERENCE_MISMATCH`, `REFERENCE_ALREADY_REVERSED`, `AMOUNT_MISMATCH`, `INVALID_REFERENCE_KIND`, `IDEMPOTENCY_CONFLICT`, `INVALID_PAYLOAD`
 
@@ -193,62 +193,62 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 
 ## 7. Concorrência (seção 8) [P1][E]
 
-- [ ] Unidade de concorrência = `walletId`
+- [x] Unidade de concorrência = `walletId`
 - [ ] Correto quando: duas apostas disputam o mesmo saldo · vários workers na mesma wallet · wallets diferentes em paralelo · **3+ instâncias**
 - [ ] Estratégia escolhida e **justificada** (pessimista, otimista com retry limitado, update atômico condicionado ou combinação)
-- [ ] Recursos do broker (FIFO, dedup) = otimização; **o banco garante as invariantes**
-- [ ] **Cenário obrigatório:** saldo 100.00, duas BETs de 80.00 simultâneas →
-  - [ ] exatamente uma `PROCESSED`
-  - [ ] a outra `REJECTED` por saldo insuficiente
-  - [ ] saldo final `20.00`
-  - [ ] exatamente **um** débito no ledger
-  - [ ] nenhum retry duplica o débito
+- [x] Recursos do broker (FIFO, dedup) = otimização; **o banco garante as invariantes**
+- [x] **Cenário obrigatório:** saldo 100.00, duas BETs de 80.00 simultâneas →
+  - [x] exatamente uma `PROCESSED`
+  - [x] a outra `REJECTED` por saldo insuficiente
+  - [x] saldo final `20.00`
+  - [x] exatamente **um** débito no ledger
+  - [x] nenhum retry duplica o débito
 
 ---
 
 ## 8. API HTTP (seção 9) [P1]
 
 ### Criar wallet
-- [ ] `POST /wallets` com `{ playerId, initialBalance: { amount, currency } }`
-- [ ] Saldo inicial > 0 → transação interna `OPENING` + lançamento `CREDIT` **na mesma transação SQL**
-- [ ] Resposta: `{ id, playerId, balance: {amount, currency}, version: 1 }`
-- [ ] Duplicada (mesmo `playerId` + `currency`) → **conflito**
+- [x] `POST /wallets` com `{ playerId, initialBalance: { amount, currency } }`
+- [x] Saldo inicial > 0 → transação interna `OPENING` + lançamento `CREDIT` **na mesma transação SQL**
+- [x] Resposta: `{ id, playerId, balance: {amount, currency}, version: 1 }`
+- [x] Duplicada (mesmo `playerId` + `currency`) → **conflito**
 
 ### Consultas
-- [ ] `GET /wallets/:walletId`
-- [ ] `GET /wallets/:walletId/ledger?cursor=...&limit=50` — cursor **estável e opaco**
-- [ ] `GET /wagering/transactions/:transactionId`
-- [ ] `GET /providers/:providerId/wagering/transactions/:externalTransactionId`
+- [x] `GET /wallets/:walletId`
+- [x] `GET /wallets/:walletId/ledger?cursor=...&limit=50` — cursor **estável e opaco**
+- [x] `GET /wagering/transactions/:transactionId`
+- [x] `GET /providers/:providerId/wagering/transactions/:externalTransactionId`
 
 ### Submeter transação
-- [ ] `POST /wagering/transactions` com header `Idempotency-Key`
-- [ ] Body: `providerId`, `externalTransactionId`, `playerId`, `walletId`, `roundId`, `gameId`, `kind`, `money` (+ `referenceExternalTransactionId` em REFUND/ROLLBACK)
-- [ ] Resposta: `{ transactionId, status, balance, idempotentReplay }`
+- [x] `POST /wagering/transactions` com header `Idempotency-Key`
+- [x] Body: `providerId`, `externalTransactionId`, `playerId`, `walletId`, `roundId`, `gameId`, `kind`, `money` (+ `referenceExternalTransactionId` em REFUND/ROLLBACK)
+- [x] Resposta: `{ transactionId, status, balance, idempotentReplay }`
 - Idempotência [E]:
-  - [ ] header **obrigatório** e é a fonte da verdade
-  - [ ] padrão recomendado: `"{providerId}:{externalTransactionId}"`
-  - [ ] `payloadHash` = hash de **JSON canônico** (chaves ordenadas) só dos campos de negócio; header e metadados de transporte **não entram**; **algoritmo documentado**
-  - [ ] requisição idêntica → mesma resposta com `idempotentReplay: true`
-  - [ ] mesma key + payload diferente → **conflito**, não replay
+  - [x] header **obrigatório** e é a fonte da verdade
+  - [x] padrão recomendado: `"{providerId}:{externalTransactionId}"`
+  - [x] `payloadHash` = hash de **JSON canônico** (chaves ordenadas) só dos campos de negócio; header e metadados de transporte **não entram**; **algoritmo documentado**
+  - [x] requisição idêntica → mesma resposta com `idempotentReplay: true`
+  - [x] mesma key + payload diferente → **conflito**, não replay
 
 ### Status HTTP
 - [ ] Mapeamento seu, mas **consistente em todos os endpoints**, distinguindo:
-  - [ ] payload inválido (sugestão 400/422)
-  - [ ] conflito de idempotência (409)
-  - [ ] rejeição por regra de negócio (sugestão 422, ou 200 com `status: REJECTED` — decidir e documentar)
+  - [x] payload inválido (sugestão 400/422)
+  - [x] conflito de idempotência (409)
+  - [x] rejeição por regra de negócio (sugestão 422, ou 200 com `status: REJECTED` — decidir e documentar)
   - [ ] aceite com processamento pendente (202)
   - [ ] falha transitória de infraestrutura (503)
 - [ ] Documentar a tabela no ARCHITECTURE.md
 
 ### Reconciliação
-- [ ] `POST /wallets/:walletId/reconciliation`
-- [ ] Resposta: `walletId`, `storedBalance`, `calculatedBalance`, `difference`, `consistent`, `checkedEntries`
+- [x] `POST /wallets/:walletId/reconciliation`
+- [x] Resposta: `walletId`, `storedBalance`, `calculatedBalance`, `difference`, `consistent`, `checkedEntries`
 - [ ] Divergência **não é corrigida silenciosamente**: logada, contada em métrica e sinalizada na resposta
 
 ### Health [P1]
-- [ ] `GET /health/live` — processo vivo
-- [ ] `GET /health/ready` — PostgreSQL **e** SQS alcançáveis
-- [ ] Sem autenticação
+- [x] `GET /health/live` — processo vivo
+- [x] `GET /health/ready` — PostgreSQL **e** SQS alcançáveis
+- [x] Sem autenticação
 
 ---
 
@@ -299,14 +299,14 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 ## 12. Testes obrigatórios (seção 13)
 
 ### Unidade [P1]
-- [ ] `Money`: escala, arredondamento, entradas inválidas
-- [ ] invariantes da `Wallet`
-- [ ] regras de BET, WIN, LOSS, REFUND, ROLLBACK
-- [ ] conflito de moeda
-- [ ] idempotency key com payload divergente
+- [x] `Money`: escala, arredondamento, entradas inválidas
+- [x] invariantes da `Wallet`
+- [x] regras de BET, WIN, LOSS, REFUND, ROLLBACK
+- [x] conflito de moeda
+- [x] idempotency key com payload divergente
 
 ### Integração — Postgres e LocalStack **reais em containers** [E]
-- [ ] migrations e constraints
+- [x] migrations e constraints
 - [ ] atomicidade entre wallet, ledger, inbox e outbox
 - [ ] inbox e redelivery
 - [ ] publishers concorrentes na mesma outbox
@@ -314,9 +314,9 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 - [ ] recuperação após reinicialização
 
 ### Concorrência — paralelismo real, não mock sequencial
-- [ ] 1. mesma aposta **50 vezes em paralelo** → um único débito
-- [ ] 2. cenário 100/80
-- [ ] 3. wallets distintas em paralelo
+- [x] 1. mesma aposta **50 vezes em paralelo** → um único débito
+- [x] 2. cenário 100/80
+- [x] 3. wallets distintas em paralelo
 - [ ] 4. **≥ 3 processos/instâncias** simultâneos
 - [ ] 5. worker morto **depois do commit e antes do ack**
 - [ ] 6. dois publishers na mesma outbox
@@ -341,13 +341,13 @@ Fluxo de uma rodada: `BET → WIN | LOSS | REFUND | ROLLBACK`. Entrega **at-leas
 | Documentação | 5 | README + ARCHITECTURE.md |
 
 ### Falhas eliminatórias [E]
-- [ ] `number` para dinheiro
-- [ ] saldo negativo por race
-- [ ] débito ou crédito duplicado
-- [ ] idempotência só em memória
+- [x] `number` para dinheiro
+- [x] saldo negativo por race
+- [x] débito ou crédito duplicado
+- [x] idempotência só em memória
 - [ ] correto só com uma instância
 - [ ] evento publicado antes do commit
-- [ ] sem ledger auditável
+- [x] sem ledger auditável
 - [ ] testes que trocam **completamente** PostgreSQL e SQS por mocks
 
 ### Diferencial [OPC]

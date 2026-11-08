@@ -22,5 +22,9 @@
     "skipLibCheck": true,
     "strict": true,
     "strictPropertyInitialization": false
-  }
+  },
+  "include": [
+    "src/**/*",
+    "scripts/**/*"
+  ]
 }

@@ -1,0 +1,3 @@
+[test]
+# Roda antes de qualquer arquivo de teste: aponta para o banco/filas de teste e aplica as migrations.
+preload = ["./test/support/preload.ts"]

@@ -58,14 +58,19 @@ describe('Money', () => {
   });
 
   test('rejeita amount que não é string (number nunca vale para dinheiro)', () => {
-    expect(() => Money.from({ amount: 10 as unknown as string, currency: 'BRL' })).toThrow(
-      InvalidMoneyError,
-    );
+    expect(() =>
+      Money.from({ amount: 10 as unknown as string, currency: 'BRL' }),
+    ).toThrow(InvalidMoneyError);
   });
 
-  test.each([['brl'], ['BR'], ['BRLL'], ['']])('rejeita moeda inválida %p', (currency) => {
-    expect(() => Money.from({ amount: '1.00', currency })).toThrow(InvalidMoneyError);
-  });
+  test.each([['brl'], ['BR'], ['BRLL'], ['']])(
+    'rejeita moeda inválida %p',
+    (currency) => {
+      expect(() => Money.from({ amount: '1.00', currency })).toThrow(
+        InvalidMoneyError,
+      );
+    },
+  );
 
   test('moedas diferentes geram erro de domínio', () => {
     const usd = Money.from({ amount: '1.00', currency: 'USD' });
@@ -76,11 +81,17 @@ describe('Money', () => {
   });
 
   test('fromStored aceita negativo, from não', () => {
-    expect(Money.fromStored({ amount: '-5.00', currency: 'BRL' }).isNegative()).toBe(true);
-    expect(() => Money.from({ amount: '-5.00', currency: 'BRL' })).toThrow(InvalidMoneyError);
+    expect(
+      Money.fromStored({ amount: '-5.00', currency: 'BRL' }).isNegative(),
+    ).toBe(true);
+    expect(() => Money.from({ amount: '-5.00', currency: 'BRL' })).toThrow(
+      InvalidMoneyError,
+    );
   });
 
   test('valores grandes mantêm precisão exata', () => {
-    expect(brl('999999999999999999.99').add(brl('0.01')).amount).toBe('1000000000000000000.00');
+    expect(brl('999999999999999999.99').add(brl('0.01')).amount).toBe(
+      '1000000000000000000.00',
+    );
   });
 });

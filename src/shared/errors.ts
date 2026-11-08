@@ -43,3 +43,6 @@ export class WalletAlreadyExistsError extends DomainError {
 export class NotFoundError extends DomainError {
   readonly code = 'NOT_FOUND';
 }
+
+/** Alguém mudou a wallet sem passar pelo lock: o UPDATE com a `version` esperada não achou a linha. Tentar de novo resolve. */
+export class WalletVersionConflictError extends Error {}
